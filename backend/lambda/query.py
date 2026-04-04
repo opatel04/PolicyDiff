@@ -29,11 +29,11 @@ logger = logging.getLogger()
 logger.setLevel(logging.INFO)
 
 CORS_ORIGIN = os.environ.get("CORS_ORIGIN", "*")
-QUERY_LOG_TABLE = os.environ.get("QUERY_LOG_TABLE", "QueryLog")
-DRUG_POLICY_CRITERIA_TABLE = os.environ.get("DRUG_POLICY_CRITERIA_TABLE", "DrugPolicyCriteria")
-POLICY_DOCUMENTS_TABLE = os.environ.get("POLICY_DOCUMENTS_TABLE", "PolicyDocuments")
-POLICY_DIFFS_TABLE = os.environ.get("POLICY_DIFFS_TABLE", "PolicyDiffs")
-BEDROCK_MODEL_ID = os.environ.get("BEDROCK_MODEL_ID", "anthropic.claude-sonnet-4-5-20250514")
+QUERY_LOG_TABLE = os.environ.get("QUERY_LOG_TABLE", "")
+DRUG_POLICY_CRITERIA_TABLE = os.environ.get("DRUG_POLICY_CRITERIA_TABLE", "")
+POLICY_DOCUMENTS_TABLE = os.environ.get("POLICY_DOCUMENTS_TABLE", "")
+POLICY_DIFFS_TABLE = os.environ.get("POLICY_DIFFS_TABLE", "")
+BEDROCK_MODEL_ID = os.environ.get("BEDROCK_MODEL_ID", "")
 
 dynamodb = boto3.resource("dynamodb")
 bedrock = boto3.client("bedrock-runtime", region_name=os.environ.get("AWS_REGION", "us-east-1"))
@@ -236,6 +236,8 @@ def submit_query(body: dict) -> dict:
     query_text = body.get("queryText", "").strip()
     if not query_text:
         return _response(400, {"error": "queryText is required"})
+    if len(query_text) > 2000:
+        return _response(400, {"error": "queryText exceeds maximum length of 2000 characters"})
 
     start_time = time.time()
     query_id = str(uuid.uuid4())
@@ -329,30 +331,42 @@ def _convert_floats(obj: Any) -> Any:
 
 # ── Router ────────────────────────────────────────────────────────────────
 
+def _get_method_and_path(event: dict) -> tuple[str, str]:
+    """Support both REST API v1 and HTTP API v2 event shapes."""
+    if "requestContext" in event and "http" in event.get("requestContext", {}):
+        ctx = event["requestContext"]["http"]
+        return ctx.get("method", ""), event.get("rawPath", "")
+    return event.get("httpMethod", ""), event.get("resource", "")
+
+
 def lambda_handler(event: dict[str, Any], context: Any) -> dict[str, Any]:
     logger.info(json.dumps({"event_keys": list(event.keys())}))
 
-    if event.get("httpMethod") == "OPTIONS":
+    http_method, resource = _get_method_and_path(event)
+    if http_method == "OPTIONS":
         return {"statusCode": 200, "headers": _cors_headers(), "body": ""}
 
-    http_method = event.get("httpMethod", "")
-    resource = event.get("resource", "")
     path_params = event.get("pathParameters") or {}
+    if not path_params:
+        parts = resource.strip("/").split("/")
+        # /api/query/{queryId} → parts = ["api", "query", "<id>"]
+        if len(parts) == 3 and parts[1] == "query":
+            path_params = {"queryId": parts[2]}
 
     try:
         if http_method == "POST" and resource == "/api/query":
             body = json.loads(event.get("body") or "{}")
             return submit_query(body)
 
-        elif http_method == "GET" and resource == "/api/query/{queryId}":
-            return get_query(path_params.get("queryId", ""))
-
         elif http_method == "GET" and resource == "/api/queries":
             return list_queries()
+
+        elif http_method == "GET" and resource.startswith("/api/query/"):
+            return get_query(path_params.get("queryId", ""))
 
         else:
             return _response(404, {"error": "Not found"})
 
     except Exception as e:
         logger.exception(f"Unhandled error: {e}")
-        return _response(500, {"error": "Internal server error", "detail": str(e)})
+        return _response(500, {"error": "Internal server error"})

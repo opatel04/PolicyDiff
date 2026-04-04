@@ -345,13 +345,35 @@ def lambda_handler(event: dict[str, Any], context: Any) -> dict[str, Any]:
     """
     logger.info(json.dumps({"state": "AssembleStructuredText", "event_keys": list(event.keys())}))
 
-    policy_doc_id: str = event["policyDocId"]
     s3_bucket: str = event["s3Bucket"]
     payer_name: str = event.get("payerName", "")
     doc_class: str = event.get("documentClass", "drug_specific")
 
+    # Parse policyDocId from s3Key if not explicitly provided
+    # EventBridge passes s3Key = "raw/{policyDocId}/raw.pdf"; we extract index 1
+    policy_doc_id: str = event.get("policyDocId") or ""
+    if not policy_doc_id:
+        s3_key = event.get("s3Key", "")
+        parts = s3_key.strip("/").split("/")
+        if len(parts) >= 2:
+            policy_doc_id = parts[1]  # raw/{policyDocId}/raw.pdf → index 1
+    if not policy_doc_id:
+        raise ValueError("policyDocId missing and could not be parsed from s3Key")
+
     # ── PDF path: Textract ────────────────────────────────────────────────
+    # ADR: textractOutputKey derived from OutputConfig path | StartDocumentAnalysis writes blocks to
+    # s3Bucket/textract-output/{policyDocId}/{jobId}/ — key passed through SFN state or derived here
     textract_output_key: str = event.get("textractOutputKey", "")
+    if not textract_output_key:
+        # Derive from textractResult.JobId set by StartTextractJob state
+        job_id = (event.get("textractResult") or {}).get("JobId", "")
+        if job_id:
+            textract_output_key = f"textract-output/{policy_doc_id}/{job_id}/1"
+            logger.info(json.dumps({"action": "derived_textract_key", "key": textract_output_key}))
+        else:
+            logger.error(json.dumps({"error": "missing_textract_output_key", "policyDocId": policy_doc_id}))
+            raise ValueError("textractOutputKey not set and textractResult.JobId not found in event")
+
     try:
         resp = s3.get_object(Bucket=s3_bucket, Key=textract_output_key)
         textract_results = json.loads(resp["Body"].read().decode("utf-8"))
@@ -423,6 +445,7 @@ def lambda_handler(event: dict[str, Any], context: Any) -> dict[str, Any]:
 
     return {
         **event,
+        "policyDocId": policy_doc_id,
         "structuredTextS3Key": structured_key,
         "pageCount": page_count,
         "sectionCount": len(sections),
