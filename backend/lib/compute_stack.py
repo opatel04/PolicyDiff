@@ -169,7 +169,7 @@ class PolicyDiffComputeStack(cdk.Stack):
             memory_size=512,
             environment={
                 **common_env,
-                "VECTORS_BUCKET_NAME": storage_stack.vectors_bucket.ref,
+                "VECTORS_BUCKET_NAME": f"policydiff-vectors-{cdk.Aws.ACCOUNT_ID}-{cdk.Aws.REGION}",
                 "TITAN_MODEL_ARN": TITAN_EMBED_ARN,
             },
         )
@@ -283,7 +283,7 @@ class PolicyDiffComputeStack(cdk.Stack):
             actions=["bedrock:InvokeModel"],
             resources=[TITAN_EMBED_ARN],
         ))
-        self.query_fn.add_environment("VECTORS_BUCKET_NAME", storage_stack.vectors_bucket.ref)
+        self.query_fn.add_environment("VECTORS_BUCKET_NAME", f"policydiff-vectors-{cdk.Aws.ACCOUNT_ID}-{cdk.Aws.REGION}")
         self.query_fn.add_environment("TITAN_MODEL_ARN", TITAN_EMBED_ARN)
 
         # CompareLambda
