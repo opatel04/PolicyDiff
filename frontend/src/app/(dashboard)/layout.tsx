@@ -8,8 +8,8 @@ export default function DashboardLayout({
     return (
         <div className="h-screen w-full bg-background flex overflow-hidden">
             <AppSidebar />
-            <main className="flex-1 flex flex-col min-w-0 min-h-0 bg-background overflow-hidden relative">
-                <div className="flex-1 flex flex-col overflow-hidden bg-background text-foreground">
+            <main className="flex-1 flex flex-col min-w-0 min-h-0 bg-background overflow-y-auto relative">
+                <div className="flex-1 flex flex-col bg-background text-foreground">
                     {children}
                 </div>
             </main>
