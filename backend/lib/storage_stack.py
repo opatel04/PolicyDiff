@@ -19,7 +19,7 @@ class PolicyDiffStorageStack(cdk.Stack):
         self.policy_bucket = s3.Bucket(
             self,
             "DocumentsBucket",
-            bucket_name=f"policydiff-documents-{cdk.Aws.ACCOUNT_ID}-{cdk.Aws.REGION}",
+            bucket_name=f"policydiff-docs-{cdk.Aws.REGION}",
             versioned=True,
             block_public_access=s3.BlockPublicAccess.BLOCK_ALL,
             encryption=s3.BucketEncryption.S3_MANAGED,
@@ -168,7 +168,7 @@ class PolicyDiffStorageStack(cdk.Stack):
         )
 
         # ADR: S3 Vectors L1 construct | aws_s3vectors L2 not yet available; CfnVectorBucket is the only option
-        vectors_bucket_name = f"policydiff-vectors-{cdk.Aws.ACCOUNT_ID}-{cdk.Aws.REGION}"
+        vectors_bucket_name = f"policydiff-vectors-{cdk.Aws.REGION}"
         self.vectors_bucket = s3vectors.CfnVectorBucket(
             self, "VectorsBucket",
             vector_bucket_name=vectors_bucket_name,

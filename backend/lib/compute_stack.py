@@ -169,7 +169,7 @@ class PolicyDiffComputeStack(cdk.Stack):
             memory_size=512,
             environment={
                 **common_env,
-                "VECTORS_BUCKET_NAME": f"policydiff-vectors-{cdk.Aws.ACCOUNT_ID}-{cdk.Aws.REGION}",
+                "VECTORS_BUCKET_NAME": f"policydiff-vectors-{cdk.Aws.REGION}",
                 "TITAN_MODEL_ARN": TITAN_EMBED_ARN,
             },
         )
@@ -283,7 +283,7 @@ class PolicyDiffComputeStack(cdk.Stack):
             actions=["bedrock:InvokeModel"],
             resources=[TITAN_EMBED_ARN],
         ))
-        self.query_fn.add_environment("VECTORS_BUCKET_NAME", f"policydiff-vectors-{cdk.Aws.ACCOUNT_ID}-{cdk.Aws.REGION}")
+        self.query_fn.add_environment("VECTORS_BUCKET_NAME", f"policydiff-vectors-{cdk.Aws.REGION}")
         self.query_fn.add_environment("TITAN_MODEL_ARN", TITAN_EMBED_ARN)
 
         # CompareLambda
@@ -328,7 +328,7 @@ class PolicyDiffComputeStack(cdk.Stack):
         ))
         self.embed_index_fn.add_to_role_policy(iam.PolicyStatement(
             actions=["s3vectors:PutVectors"],
-            resources=[f"arn:aws:s3vectors:{cdk.Aws.REGION}:{cdk.Aws.ACCOUNT_ID}:bucket/policydiff-vectors-{cdk.Aws.ACCOUNT_ID}-{cdk.Aws.REGION}/index/policy-criteria-index"],
+            resources=[f"arn:aws:s3vectors:{cdk.Aws.REGION}:{cdk.Aws.ACCOUNT_ID}:bucket/policydiff-vectors-{cdk.Aws.REGION}/index/policy-criteria-index"],
         ))
         NagSuppressions.add_resource_suppressions(self.embed_index_fn, [
             {"id": "AwsSolutions-IAM4", "reason": "AWSLambdaBasicExecutionRole is the minimal required managed policy for Lambda CloudWatch logging"},
@@ -339,7 +339,7 @@ class PolicyDiffComputeStack(cdk.Stack):
         # QueryLambda — S3 Vectors semantic search + Titan embeddings for query-time embedding
         self.query_fn.add_to_role_policy(iam.PolicyStatement(
             actions=["s3vectors:QueryVectors"],
-            resources=[f"arn:aws:s3vectors:{cdk.Aws.REGION}:{cdk.Aws.ACCOUNT_ID}:bucket/policydiff-vectors-{cdk.Aws.ACCOUNT_ID}-{cdk.Aws.REGION}/index/policy-criteria-index"],
+            resources=[f"arn:aws:s3vectors:{cdk.Aws.REGION}:{cdk.Aws.ACCOUNT_ID}:bucket/policydiff-vectors-{cdk.Aws.REGION}/index/policy-criteria-index"],
         ))
 
         # ── Extraction pipeline Lambda IAM grants (Fix 1, Fix 5) ─────────────
