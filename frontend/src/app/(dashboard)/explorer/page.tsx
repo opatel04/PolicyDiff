@@ -64,6 +64,22 @@ const drugsData: Drug[] = [
     },
 ];
 
+function fuzzyMatch(query: string, target: string): number {
+    const q = query.toLowerCase();
+    const t = target.toLowerCase();
+    if (t.includes(q)) return 1000 + (1000 - t.indexOf(q));
+    let score = 0, qi = 0, lastIndex = -1, consecutive = 0;
+    for (let ti = 0; ti < t.length && qi < q.length; ti++) {
+        if (t[ti] === q[qi]) {
+            consecutive = lastIndex === ti - 1 ? consecutive + 1 : 1;
+            score += consecutive * 10 + Math.max(0, 20 - ti);
+            lastIndex = ti;
+            qi++;
+        }
+    }
+    return qi === q.length ? score : 0;
+}
+
 export default function DrugExplorerPage() {
     const [expandedRows, setExpandedRows] = useState<string[]>([]);
     const [searchQuery, setSearchQuery] = useState("");
@@ -85,11 +101,16 @@ export default function DrugExplorerPage() {
         setTimeout(() => setPendingAction(null), 1000);
     };
 
-    const filtered = drugsData.filter(
-        (d) =>
-            d.name.toLowerCase().includes(searchQuery.toLowerCase()) ||
-            d.brandNames.toLowerCase().includes(searchQuery.toLowerCase())
-    );
+    const filtered = searchQuery.trim()
+        ? drugsData
+            .map((d) => ({
+                drug: d,
+                score: Math.max(fuzzyMatch(searchQuery, d.name), fuzzyMatch(searchQuery, d.brandNames)),
+            }))
+            .filter(({ score }) => score > 0)
+            .sort((a, b) => b.score - a.score)
+            .map(({ drug }) => drug)
+        : drugsData;
 
     return (
         <div className="p-6 max-w-7xl space-y-6">
