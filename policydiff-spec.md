@@ -193,8 +193,8 @@ PolicyDiff is a four-layer system:
 
 | Member | Role | Primary Ownership |
 |---|---|---|
-| **Atharva (AZ)** | Backend + Cloud Infrastructure | CDK stack, S3, DynamoDB, Step Functions, API Gateway, Lambda CRUD, ingestion pipeline wiring |
-| **Mohith** | AI/ML Core | Bedrock prompts, extraction engine, query classifier, diff engine, Approval Path Generator logic, Gemini integration |
+| **Atharva (AZ)** | Backend + Cloud Infrastructure + Embedding Layer | CDK stacks, S3, DynamoDB, S3 Vectors bucket + index, Step Functions wiring, API Gateway, Lambda CRUD, ingestion pipeline infrastructure (States 1–2, 6.5, 7), `embed_and_index.py` (chunking + Titan Embeddings + S3 Vectors write) |
+| **Mohith** | AI/ML Core + Extraction | Extraction logic (States 3–6: assemble_text, bedrock_extract, confidence_score, write_criteria), query classifier, diff engine, comparison matrix normalization, discordance detection, approval path generator, vector-based query retrieval (query.py) |
 | **Om** | Frontend Lead | All 8 screens, comparison matrix component, query interface, change feed, design system |
 | **Dominic** | Frontend Support | PDF upload component, drug explorer, discordance alerts view, API integration wiring on frontend |
 
@@ -207,11 +207,12 @@ PolicyDiff is a four-layer system:
 - **IaC:** AWS CDK v2 (Python)
 - **API:** API Gateway REST + Lambda (per-route functions)
 - **Orchestration:** AWS Step Functions (Express Workflows)
-- **Storage:** S3 (raw PDFs, Textract output), DynamoDB (all structured data)
+- **Storage:** S3 (raw PDFs, Textract output), DynamoDB (all structured data), S3 Vectors (semantic search index for query interface)
 - **OCR:** AWS Textract (TABLES + FORMS mode)
-- **AI — Primary:** AWS Bedrock, Claude Sonnet (us-east-1)
-- **AI — Gemini Track:** Google Gemini 1.5 Pro via REST API (called from Lambda, key stored in AWS Secrets Manager)
-- **Hosting:** AWS Amplify (Next.js static export)
+<<<<<<< HEAD
+- **AI — Primary:** AWS Bedrock, Claude Sonnet `anthropic.claude-sonnet-4-5` (us-east-1)
+- **AI — Embeddings:** AWS Bedrock, Titan Embeddings v2 `amazon.titan-embed-text-v2:0` (us-east-1) — used for S3 Vectors indexing
+- **Hosting:** AWS Amplify (Next.js app, connected manually via console)
 - **Region:** us-east-1
 
 ### Frontend
@@ -390,25 +391,63 @@ S3 Upload Event
 ## 8. Feature Specifications
 
 ### Feature 1: Policy Document Ingestion Pipeline
-**Owner:** AZ (infrastructure) + Mohith (extraction logic)
+**Owner:** AZ (infrastructure + embedding/indexing layer) + Mohith (extraction logic, States 3–6)
 
-**What it does:**  
-User uploads a medical benefit drug policy PDF. System extracts structure-aware text via Textract, parses it into the DrugPolicyCriteria schema via Bedrock, stores in DynamoDB, and auto-triggers diffs if a previous version exists.
+**What it does:**
+User uploads a medical benefit drug policy PDF. Mohith's extraction pipeline (Textract + Claude) pulls structured criteria out of the messy PDFs. AZ's embedding layer then chunks the raw excerpts, embeds them via Titan, and writes vectors to S3 Vectors for semantic search. Structured data lands in DynamoDB. Vectors land in S3 Vectors. Both are used downstream.
 
-**Why this is hard:**  
-A single UHC infliximab policy is 29 pages covering 10+ indications, each with different step therapy, dosing, preferred product rules, and reauthorization criteria. Tables, nested bullet points, conditional logic ("one of the following" / "all of the following"), cross-references. Generic chunking fails here. We preserve document hierarchy through Textract's TABLES + FORMS mode.
+**Why extraction is hard (Mohith's problem):**
+Every payer formats their PDFs differently. UHC uses numbered sections with nested bullets. Aetna uses clinical policy bulletin format with tables. Cigna uses a different header hierarchy. A single UHC infliximab policy is 29 pages covering 10+ indications, each with different step therapy, dosing, preferred product rules, and reauthorization criteria. The challenges:
+- **Tables**: Textract returns table cells as disconnected blocks — row/column relationships must be reconstructed
+- **Nested conditions**: "One of the following" = OR logic. "All of the following" = AND logic. Claude must parse this correctly
+- **Indication isolation**: Each indication (RA, Crohn's, psoriasis...) has completely independent criteria — merging them is a critical error
+- **Brand vs generic**: Policy says "Remicade" but normalized name is "infliximab"
+- **Chunking**: 29-page PDF exceeds Claude's context — must chunk by indication section, not arbitrary character count
 
-**Backend flow:**
+**Mohith's extraction approach (States 3–6):**
+
+**State 3 — AssembleStructuredText** (`backend/lambda/extraction/assemble_text.py`):
+- Reconstruct Textract blocks into hierarchical structure: headers → sub-headers → bullets → nested conditions
+- Preserve table structure: reconstruct rows and cells from TABLE/CELL blocks
+- Output: `structured-text.json` with sections array
+
+**State 4 — BedrockSchemaExtraction** (`backend/lambda/extraction/bedrock_extract.py`):
+- Send each indication section separately to Claude Sonnet (not the whole document)
+- Use extraction prompt (Section 10.1) with strict JSON output
+- Handle chunking at logical boundaries (sub-headers), not character count
+- Enrich each record: add `policyDocId`, `payerName`, `effectiveDate`, `drugIndicationId`
+
+**State 5 — ConfidenceScoring** (`backend/lambda/extraction/confidence_score.py`):
+- Flag records where `confidence < 0.7` with `needsReview: true`
+- Additional flags: empty `initialAuthCriteria`, brand name in `drugName`, missing `indicationICD10`
+
+**State 6 — WriteToDynamoDB** (`backend/lambda/extraction/write_criteria.py`):
+- Batch write all DrugPolicyCriteria records to DynamoDB
+- Update PolicyDocuments `extractionStatus` to `"complete"` and `indicationsFound` count
+- Write `rawExcerpt` text to S3 at `{policyDocId}/excerpts/{drugIndicationId}.txt` for AZ's embedding step
+
+**AZ's embedding + indexing layer (State 6.5 — `backend/lambda/embed_and_index.py`):**
+
+Triggered after `write_criteria.py` completes (Step Functions chain or EventBridge on DynamoDB stream):
+- Read `rawExcerpt` text files from S3 (`{policyDocId}/excerpts/`)
+- For each excerpt:
+  - Chunk if > 512 tokens (split at sentence boundaries, not character count)
+  - Call Titan Embeddings v2 (`amazon.titan-embed-text-v2:0`) → 1536-dim vector
+  - Write to S3 Vectors with metadata: `{ policyDocId, drugName, indicationName, payerName, effectiveDate, benefitType, rawExcerpt (truncated 500 chars) }`
+- IAM needed: `bedrock:InvokeModel` on Titan Embeddings ARN + `s3vectors:PutVectors`
+
+**Full pipeline flow:**
 1. Frontend requests presigned S3 URL via `POST /api/policies/upload-url`
-2. Frontend uploads PDF directly to `s3://policydiff-docs/{policyDocId}/raw.pdf`
-3. S3 event notification triggers Step Functions ExtractionWorkflow
-4. **State 1 — StartTextractJob:** Call `textract:StartDocumentAnalysis` with `FeatureTypes: ["TABLES", "FORMS"]`. Store JobId in DynamoDB.
-5. **State 2 — PollTextractJob:** Poll every 10 seconds via EventBridge + Lambda. Timeout after 5 minutes with status `"failed"`.
-6. **State 3 — AssembleStructuredText:** Reconstruct Textract blocks into hierarchical structure: headers → sub-headers → bullet points → nested conditions. Preserve table cell relationships. Output to `s3://policydiff-docs/{policyDocId}/structured-text.json`.
-7. **State 4 — BedrockSchemaExtraction:** Send structured text + extraction prompt (Section 10.1) to `anthropic.claude-sonnet-4-5` via Bedrock. Parse JSON response into DrugPolicyCriteria records.
-8. **State 5 — ConfidenceScoring:** Any field with confidence < 0.7 flagged with `needsReview: true`. Write confidence map to DynamoDB.
-9. **State 6 — WriteToDynamoDB:** Batch write all DrugPolicyCriteria records. Update PolicyDocuments status to `"complete"`.
-10. **State 7 — TriggerDiffIfVersionExists:** If `previousVersionId` exists on the PolicyDocuments record, invoke DiffLambda asynchronously.
+2. Frontend uploads PDF to `s3://policydiff-docs/{policyDocId}/raw.pdf`
+3. S3 event → EventBridge → Step Functions ExtractionWorkflow
+4. **State 1 — StartTextractJob:** `textract:StartDocumentAnalysis` with `TABLES + FORMS`
+5. **State 2 — PollTextractJob:** Poll every 10s, timeout 5 min
+6. **State 3 — AssembleStructuredText** (Mohith)
+7. **State 4 — BedrockSchemaExtraction** (Mohith)
+8. **State 5 — ConfidenceScoring** (Mohith)
+9. **State 6 — WriteToDynamoDB** (Mohith) — also writes rawExcerpts to S3
+10. **State 6.5 — EmbedAndIndex** (AZ) — chunks + embeds + writes to S3 Vectors
+11. **State 7 — TriggerDiffIfVersionExists** (AZ) — async DiffLambda if new version
 
 **Frontend polling:**  
 Frontend polls `GET /api/policies/{policyDocId}/status` every 3 seconds. Show Step Functions state machine progress: "Extracting text... Parsing structure... Found N indications... Writing records... Complete."
@@ -461,17 +500,34 @@ User types a plain English question. System classifies query type, retrieves rel
 6. "Does Aetna's medical policy for rituximab differ from their pharmacy policy?" → discordance check
 
 **Backend flow:**
-1. `POST /api/query` with `{ queryText, sessionId? }`
+1. `POST /api/query` with `{ queryText }`
 2. Bedrock classifies query type: `coverage_check | criteria_lookup | cross_payer_compare | change_tracking | discordance_check`
-3. Based on type, construct DynamoDB queries:
-   - `coverage_check` → query `drugName-payerName-index` across all payers
-   - `criteria_lookup` → query specific payer + drug + indication
-   - `cross_payer_compare` → fetch same drug from multiple payers, pass to Bedrock comparison prompt
-   - `change_tracking` → query `PolicyDiffs` table for drug/payer
-   - `discordance_check` → query `PolicyDiffs` where `diffType = "benefit_discordance"`
-4. Retrieved data + original question → Bedrock synthesis prompt (Section 10.2)
-5. Response includes: `{ queryType, answer, citations: [{payer, documentTitle, effectiveDate, excerpt, confidence}] }`
+3. **Retrieval — two paths based on query type:**
+   - **Structured queries** (`criteria_lookup`, `change_tracking`, `discordance_check`): query DynamoDB directly by exact payer + drug + indication — you know exactly what you need
+   - **Open-ended semantic queries** (`coverage_check`, `cross_payer_compare`): embed the query text via Titan Embeddings v2 → query S3 Vectors index → retrieve top-5 most semantically relevant `rawExcerpt` chunks with metadata (payer, drug, indication, effectiveDate) — ~3k tokens instead of 40k
+4. Retrieved excerpts/records + original question → Bedrock Claude synthesis prompt
+5. Response includes: `{ queryType, answer, citations: [{payer, documentTitle, effectiveDate, excerpt}] }`
 6. Write to QueryLog table
+
+**Token impact:** Open-ended queries drop from ~20-40k tokens (full criteria JSON for all matching records) to ~3k tokens (top-5 relevant excerpts from S3 Vectors).
+
+**S3 Vectors index:** `policy-criteria-index` inside bucket `policydiff-vectors-{account}-{region}`. Each vector entry:
+```json
+{
+  "key": "{policyDocId}#{drugIndicationId}",
+  "data": { "float32": [/* 1536-dim Titan embedding of rawExcerpt */] },
+  "metadata": {
+    "policyDocId": "...",
+    "drugName": "infliximab",
+    "indicationName": "rheumatoid arthritis",
+    "payerName": "UnitedHealthcare",
+    "effectiveDate": "2026-02-01",
+    "benefitType": "medical",
+    "rawExcerpt": "Patient must have failed at least one biosimilar..."
+  }
+}
+```
+Vectors are written during extraction (Step 6 — `write_criteria.py`) immediately after DynamoDB write.
 
 **API endpoints:**
 ```
@@ -1043,10 +1099,25 @@ Return JSON only:
 
 Displays on initial load. Shows:
 - Stats row: Total policies ingested | Drugs tracked | Payers covered | Changes detected this quarter
+- **Personalized "Your Watched Drugs" section** — reads `watched_drugs` from the Auth0 JWT claims (`https://policydiff.com/watched_drugs`). If the user has watched drugs set, shows a filtered change feed: "Here are the latest policy changes for infliximab, adalimumab." Each card links directly to the relevant diff or comparison. If no watched drugs are set, shows a prompt: "Watch drugs to get personalized updates → Settings."
 - "What changed this quarter?" summary card — top 3 most severe diffs, red badge for breaking changes
 - Recent activity feed (last 5 uploads + extractions)
-- Quick action: "Upload new policy" button → navigates to Upload screen
+- Quick action: "Upload new policy" button → navigates to Upload screen (admin role only — hide for consultant role)
 - Quick action: "Run comparison" → navigates to Comparison Matrix
+
+**Auth0 JWT claims available on the frontend (injected by Auth0 Action):**
+- `https://policydiff.com/role` — `"admin"` or `"consultant"`
+- `https://policydiff.com/watched_drugs` — array of drug names e.g. `["infliximab", "adalimumab"]`
+- `https://policydiff.com/watched_payers` — array of payer names e.g. `["UnitedHealthcare", "Aetna"]`
+
+**Role-based UI behavior:**
+- `admin` role: sees Upload button, can delete policies, sees full admin controls
+- `consultant` role: read-only, no upload/delete, sees personalized watched-drug dashboard
+
+**Watched drugs management:** Add a "Settings" or gear icon on the dashboard that opens a modal/drawer where the user can add/remove drugs and payers from their watch list. This calls `PUT /api/users/me/preferences` and the next login will re-inject the updated list into the JWT via the Auth0 Action.
+
+**How watched_drugs gets into the JWT:**
+An Auth0 Action runs on every login. It reads the user's `UserPreferences` record from DynamoDB (via the backend API or direct AWS SDK call) and injects `watched_drugs`, `watched_payers`, and `role` as custom claims. The frontend reads these directly from the decoded JWT — no extra API call needed on page load.
 
 ---
 
@@ -1182,15 +1253,20 @@ This is the primary demo screen. Must be visually undeniable.
 # - Lifecycle rule: transition to S3-IA after 30 days
 # - Block all public access
 
+# S3 Vectors bucket: policydiff-vectors-{account}-{region}  [AZ]
+# - Vector index: policy-criteria-index
+# - Dimension: 1536 (Titan Embeddings v2)
+# - Distance metric: cosine
+# - IAM: s3vectors:PutVectors for write_criteria Lambda
+#         s3vectors:QueryVectors for QueryLambda
+
 # DynamoDB tables (all with PAY_PER_REQUEST billing):
 # - PolicyDocuments (PK: policyDocId)
 # - DrugPolicyCriteria (PK: policyDocId, SK: drugIndicationId) + 2 GSIs
 # - PolicyDiffs (PK: diffId) + 1 GSI
 # - QueryLog (PK: queryId)
 # - ApprovalPaths (PK: approvalPathId)
-
-# Secrets Manager:
-# - policydiff/gemini-api-key
+# - UserPreferences (PK: userId) — Auth0 sub claim, stores watched drugs/payers
 ```
 
 #### `PolicyDiffComputeStack`
@@ -1203,18 +1279,28 @@ This is the primary demo screen. Must be visually undeniable.
 # - DiffLambda (timeout: 120s)
 # - DiscordanceLambda (timeout: 60s)
 # - ApprovalPathLambda (timeout: 90s)
+# - PolicyMonitorLambda (timeout: 60s) — S3 inbox auto-ingestion, daily schedule
 # - SimulatorLambda (timeout: 60s, stretch)
 
-# Step Functions Express Workflow: ExtractionWorkflow
-# EventBridge rule: S3 upload → Step Functions trigger
+# Step Functions Express Workflow: ExtractionWorkflow (7 states, no Gemini)
+# EventBridge rule: S3 raw/ prefix → Step Functions trigger
+# EventBridge Scheduler: daily → PolicyMonitorLambda
 
 # IAM roles per Lambda (least privilege):
 # - S3: GetObject, PutObject on policydiff-documents bucket
 # - DynamoDB: specific table ARNs only
-# - Bedrock: InvokeModel on claude-sonnet-4-5 ARN
+# - Bedrock Claude Sonnet: InvokeModel on anthropic.claude-sonnet-4-5 ARN
+#   → QueryLambda, CompareLambda, DiffLambda, ApprovalPathLambda, ExtractionWorkflow role
+# - Bedrock Titan Embeddings: InvokeModel on amazon.titan-embed-text-v2:0 ARN  [NEW]
+#   → write_criteria Lambda (Step 6) — generates embeddings for S3 Vectors
+#   → QueryLambda — embeds user query for vector similarity search
+# - S3 Vectors: PutVectors on policydiff-vectors bucket  [NEW]
+#   → write_criteria Lambda (Step 6)
+# - S3 Vectors: QueryVectors on policydiff-vectors bucket  [NEW]
+#   → QueryLambda
 # - Textract: StartDocumentAnalysis, GetDocumentAnalysis
-# - Secrets Manager: GetSecretValue on policydiff/* (for Gemini key)
 # - Step Functions: StartExecution (for ExtractionWorkflow trigger)
+# - Auth0 JWT authorizer: all routes protected, role claim checked in Lambda
 ```
 
 #### `PolicyDiffApiStack`
@@ -1228,11 +1314,16 @@ This is the primary demo screen. Must be visually undeniable.
 
 #### `PolicyDiffFrontendStack`
 ```python
-# Amplify App connected to GitHub repo
-# Build settings: npm run build, output out/
-# next.config.js: output: 'export' (static HTML export, no SSR)
-# Environment variables: NEXT_PUBLIC_API_BASE_URL
-# Custom domain: optional if time permits
+# NOTE: FrontendStack is NOT deployed via CDK — Amplify is connected manually
+# through the AWS Console (GitHub OAuth connection, build settings, env vars).
+# The CDK stack exists for IaC documentation purposes only.
+#
+# Amplify App: connected to github.com/opatel04/PolicyDiff, main branch
+# Build settings: cd frontend && npm ci && npm run build, output frontend/.next/
+# Environment variables (set in Amplify console):
+#   NEXT_PUBLIC_API_BASE_URL — from ApiStack CfnOutput ApiInvokeUrl
+#   NEXT_PUBLIC_AUTH0_DOMAIN — Auth0 tenant domain
+#   NEXT_PUBLIC_AUTH0_CLIENT_ID — Auth0 SPA client ID
 ```
 
 ---
