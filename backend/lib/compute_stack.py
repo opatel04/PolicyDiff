@@ -560,15 +560,12 @@ class PolicyDiffComputeStack(cdk.Stack):
         )
 
         # Inject workflow ARN into Lambdas that need to start executions
-        self.upload_url_fn.add_environment(
-            "EXTRACTION_WORKFLOW_ARN", self.extraction_workflow.state_machine_arn
-        )
         self.policy_crud_fn.add_environment(
             "EXTRACTION_WORKFLOW_ARN", self.extraction_workflow.state_machine_arn
         )
 
-        # Grant UploadUrlLambda and PolicyCrudLambda permission to start the extraction workflow
-        self.extraction_workflow.grant_start_execution(self.upload_url_fn)
+        # Grant PolicyCrudLambda permission to start the extraction workflow
+        # ADR: upload_url_fn excluded | Workflow is triggered by EventBridge on S3 ObjectCreated, not by the Lambda
         self.extraction_workflow.grant_start_execution(self.policy_crud_fn)
 
         # ── EventBridge rules ─────────────────────────────────────────────────

@@ -1,6 +1,10 @@
 # Owner: AZ
 # PolicyMonitorLambda — monitors S3 inbox/ prefix for new PDFs, moves to raw/ to trigger extraction.
-# Triggered by: EventBridge Scheduler (daily)
+# Triggered by: EventBridge Scheduler (daily) — handles the inbox/ prefix workflow only.
+#
+# DEMO SHORTCUT: Drop a PDF directly into raw/{uuid}/raw.pdf in S3 and the extraction
+# pipeline triggers immediately via EventBridge (S3 ObjectCreated → ExtractionWorkflow).
+# No need to wait for the daily monitor schedule — use this for demos and quick testing.
 #
 # NOTE: Auto-scraping payer websites is not feasible for hackathon scope.
 # Aetna CPBs are HTML-only (no PDF endpoint). Cigna blocks automated requests.
