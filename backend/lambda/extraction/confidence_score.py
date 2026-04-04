@@ -5,8 +5,15 @@
 # Any field with confidence < 0.7 gets flagged with needsReview: true.
 # Incorporates Gemini verification issues to further reduce confidence.
 #
+# Enhanced per policy-pdf-analysis.md Section 7.7:
+#   - Payer-specific confidence calibration targets
+#   - Cross-document dependency penalty (e.g., UHC "per FDA labeled dosing")
+#   - Nested logic complexity penalty (Cigna 3-level nesting)
+#   - Missing initialAuthDurationMonths penalty
+#
 # Step Functions I/O:
-#   Input:  { ..., extractedCriteria: [...], verificationResult: {...} }
+#   Input:  { ..., extractedCriteria: [...], verificationResult: {...},
+#             payerName, documentClass, ... }
 #   Output: { ..., extractedCriteria: [...] (updated), reviewCount }
 
 import json
@@ -17,22 +24,52 @@ logger = logging.getLogger()
 logger.setLevel(logging.INFO)
 
 CONFIDENCE_THRESHOLD = 0.7
-GEMINI_PENALTY = 0.15  # Confidence reduction per Gemini-flagged issue
+GEMINI_PENALTY = 0.15
+
+# ── Payer-specific confidence calibration (Section 7.7) ──────────────────
+
+PAYER_CONFIDENCE_RULES: dict[str, dict] = {
+    "UnitedHealthcare": {
+        # UHC has rigid template → high base confidence
+        "base_adjustment": 0.0,
+        "fda_dosing_penalty": -0.15,  # "per FDA labeled dosing" = incomplete data
+        "cross_reference_penalty": -0.15,
+    },
+    "UHC": {
+        "base_adjustment": 0.0,
+        "fda_dosing_penalty": -0.15,
+        "cross_reference_penalty": -0.15,
+    },
+    "Aetna": {
+        # Aetna CPBs have explicit dosing tables → good data completeness
+        "base_adjustment": 0.0,
+        "global_continuation_penalty": -0.10,  # continuation criteria is global, not per-indication
+    },
+    "Cigna": {
+        # Cigna 3-level nesting → inherently harder to extract
+        "base_adjustment": -0.05,
+        "missing_psm_penalty": -0.20,  # preferredProducts empty without PSM companion
+        "nested_logic_penalty": -0.08,  # additional penalty for deep nesting
+    },
+}
 
 
-def _score_record(record: dict, gemini_issues: list[dict]) -> dict:
+def _score_record(record: dict, gemini_issues: list[dict],
+                  payer_name: str, doc_class: str) -> dict:
     """Apply confidence rules and needsReview flagging to a single record.
 
-    Rules:
-    - Self-reported confidence < 0.7 → needsReview = True
-    - Missing critical fields (drugName, indicationName) → confidence -= 0.2
-    - Gemini found issue on this record → confidence -= 0.15 per issue
-    - Complex conditional logic detected → confidence -= 0.1
+    Enhanced with payer-specific calibration from Section 7.7 of the analysis.
     """
     confidence = float(record.get("confidence", 0.8))
     review_reasons: list[str] = []
+    payer_rules = PAYER_CONFIDENCE_RULES.get(payer_name, {})
 
-    # Rule 1: Missing critical fields
+    # Apply payer base adjustment
+    confidence += payer_rules.get("base_adjustment", 0.0)
+
+    # ── Universal rules ──────────────────────────────────────────────────
+
+    # Missing critical fields
     if not record.get("drugName"):
         confidence -= 0.2
         review_reasons.append("Missing drugName")
@@ -40,24 +77,74 @@ def _score_record(record: dict, gemini_issues: list[dict]) -> dict:
         confidence -= 0.2
         review_reasons.append("Missing indicationName")
 
-    # Rule 2: Empty criteria lists for expected fields
+    # Missing authorization criteria entirely
     if not record.get("initialAuthCriteria") and not record.get("reauthorizationCriteria"):
-        confidence -= 0.1
-        review_reasons.append("No authorization criteria extracted")
+        if record.get("coveredStatus", "covered") == "covered":
+            confidence -= 0.1
+            review_reasons.append("No authorization criteria extracted for covered indication")
 
-    # Rule 3: Check for complex conditional markers in rawExcerpt
+    # Missing initialAuthDurationMonths (new field from analysis)
+    if not record.get("initialAuthDurationMonths") and record.get("initialAuthCriteria"):
+        confidence -= 0.05
+        review_reasons.append("Missing initialAuthDurationMonths")
+
+    # ── Payer-specific rules ─────────────────────────────────────────────
+
+    # UHC: "per FDA labeled dosing" penalty
+    dosing = record.get("dosingLimits") or {}
+    if payer_name in ("UnitedHealthcare", "UHC"):
+        if dosing.get("perFDALabel") is True or dosing is None:
+            raw_excerpt = record.get("rawExcerpt", "")
+            criteria_text = json.dumps(record.get("initialAuthCriteria", []))
+            if "fda labeled dosing" in (raw_excerpt + criteria_text).lower():
+                confidence += payer_rules.get("fda_dosing_penalty", 0)
+                review_reasons.append("Dosing defers to FDA label — incomplete without Max Dosage Policy")
+
+        # UHC: cross-document reference detection
+        for field_text in [record.get("rawExcerpt", ""), json.dumps(record.get("initialAuthCriteria", []))]:
+            if "see " in field_text.lower() and "policy" in field_text.lower():
+                confidence += payer_rules.get("cross_reference_penalty", 0)
+                review_reasons.append("Cross-reference to another policy detected — data may be incomplete")
+                break
+
+    # Cigna: missing PSM penalty (preferredProducts empty)
+    if payer_name == "Cigna":
+        if not record.get("preferredProducts"):
+            confidence += payer_rules.get("missing_psm_penalty", 0)
+            review_reasons.append("Cigna preferredProducts empty — companion PSM document not merged")
+
+        # Cigna: nested logic complexity
+        criteria_list = record.get("initialAuthCriteria", [])
+        has_nested_or = any(
+            c.get("logicOperator") == "OR" for c in criteria_list
+            if isinstance(c, dict)
+        )
+        if has_nested_or:
+            confidence += payer_rules.get("nested_logic_penalty", 0)
+            review_reasons.append("Complex nested AND/OR logic detected")
+
+    # Aetna: global continuation criteria penalty
+    if payer_name == "Aetna":
+        reauth = record.get("reauthorizationCriteria", [])
+        if not reauth:
+            confidence += payer_rules.get("global_continuation_penalty", 0)
+            review_reasons.append("Continuation criteria may be global (Aetna applies single section to all indications)")
+
+    # ── Complex conditional logic detection (universal) ──────────────────
+
     excerpt = record.get("rawExcerpt", "")
     complex_markers = ["one of the following", "all of the following", "either", "unless"]
-    if any(marker in excerpt.lower() for marker in complex_markers):
-        confidence -= 0.05
-        review_reasons.append("Complex conditional logic detected")
+    complex_count = sum(1 for marker in complex_markers if marker in excerpt.lower())
+    if complex_count >= 2:
+        confidence -= 0.05 * complex_count
+        review_reasons.append(f"Multiple conditional logic markers detected ({complex_count})")
 
-    # Rule 4: Cross-reference Gemini verification issues
+    # ── Cross-reference Gemini verification issues ───────────────────────
+
     drug = record.get("drugName", "").lower()
     indication = record.get("indicationName", "").lower()
     for issue in gemini_issues:
         issue_field = issue.get("field", "").lower()
-        # Check if this issue plausibly relates to the current record
         if drug in issue_field or indication in issue_field or issue_field in str(record).lower():
             confidence -= GEMINI_PENALTY
             review_reasons.append(
@@ -66,16 +153,19 @@ def _score_record(record: dict, gemini_issues: list[dict]) -> dict:
                 f"correct={issue.get('correctValue')})"
             )
 
-    # Clamp confidence to [0, 1]
+    # ── Clamp and flag ───────────────────────────────────────────────────
+
     confidence = max(0.0, min(1.0, confidence))
     record["confidence"] = round(confidence, 3)
 
-    # Flag for review
     if confidence < CONFIDENCE_THRESHOLD:
         record["needsReview"] = True
         record["reviewReasons"] = review_reasons
     else:
         record["needsReview"] = False
+        # Still include review reasons if any exist (informational)
+        if review_reasons:
+            record["reviewReasons"] = review_reasons
 
     return record
 
@@ -87,19 +177,30 @@ def lambda_handler(event: dict[str, Any], context: Any) -> dict[str, Any]:
     criteria: list[dict] = event.get("extractedCriteria", [])
     verification: dict = event.get("verificationResult", {})
     gemini_issues: list[dict] = verification.get("issues", [])
+    payer_name: str = event.get("payerName", "")
+    doc_class: str = event.get("documentClass", "drug_specific")
+
+    # Skip scoring if extraction was skipped
+    if event.get("extractionSkipped"):
+        return {
+            **event,
+            "extractedCriteria": [],
+            "reviewCount": 0,
+            "confidenceSummary": {"totalRecords": 0, "reviewCount": 0},
+        }
 
     review_count = 0
     scored_criteria: list[dict] = []
 
     for record in criteria:
-        scored = _score_record(record, gemini_issues)
+        scored = _score_record(record, gemini_issues, payer_name, doc_class)
         if scored.get("needsReview"):
             review_count += 1
         scored_criteria.append(scored)
 
     logger.info(
         f"Confidence scoring complete: {len(scored_criteria)} records, "
-        f"{review_count} flagged for review"
+        f"{review_count} flagged for review (payer={payer_name})"
     )
 
     # Build confidence summary
@@ -112,6 +213,8 @@ def lambda_handler(event: dict[str, Any], context: Any) -> dict[str, Any]:
         "maxConfidence": round(max(confidences), 3) if confidences else 0,
         "geminiIssuesCount": len(gemini_issues),
         "geminiVerificationStatus": verification.get("status", "unknown"),
+        "payerName": payer_name,
+        "extractionPromptUsed": event.get("extractionPromptUsed", "unknown"),
     }
 
     return {

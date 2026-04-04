@@ -40,12 +40,24 @@ The extraction pipeline runs as an **AWS Step Functions** workflow triggered by 
 
 | State | Lambda | Description |
 |---|---|---|
-| 3 | `extraction/assemble_text.py` | Reconstructs Textract blocks into hierarchical structured text |
-| 4 | `extraction/bedrock_extract.py` | Extracts DrugPolicyCriteria records via Bedrock Claude Sonnet |
+| 3.0 | `extraction/classify_document.py` | Classifies document type (drug_specific, max_dosage, PSM, etc.) and routes to correct prompt (A–F) |
+| 3 | `extraction/assemble_text.py` | Assembles Textract output with boilerplate stripping, table preservation, indication splitting |
+| 4 | `extraction/bedrock_extract.py` | Two-pass extraction: ICD-10 pre-extraction → payer-specific prompt (A/B/C/D/E/F) |
 | 4.5 | `extraction/gemini_verify.py` | Cross-model verification with Gemini 1.5 Pro (non-blocking) |
-| 5 | `extraction/confidence_score.py` | Applies confidence thresholds and `needsReview` flagging |
+| 5 | `extraction/confidence_score.py` | Payer-calibrated confidence scoring with `needsReview` flagging |
 | 6 | `extraction/write_criteria.py` | Batch writes records to DynamoDB, updates policy status |
 | 7 | `extraction/trigger_diff.py` | Auto-triggers temporal diff if `previousVersionId` exists |
+
+### Extraction Prompt Routing
+
+| Prompt | Payer/Type | Description |
+|---|---|---|
+| **A** | UHC drug-specific | Rigid template parsing: Coverage Rationale → Applicable Codes → Diagnosis-Specific Criteria |
+| **B** | Aetna CPB (PDF) | Textract-based extraction, italic AND/OR markers, explicit dosing tables |
+| **C** | Cigna IP#### | 3-level nested AND/OR logic (Branch A/B), embedded auth durations |
+| **D** | UHC Max Dosage | Supplementary HCPCS dosing table extraction |
+| **E** | Change bulletins | Revision history / monthly update extraction → PolicyDiffs |
+| **F** | Cigna PSM#### | Preferred/non-preferred product extraction with exception criteria |
 
 ### Step Functions I/O Contract
 
@@ -55,11 +67,24 @@ Every state receives the full event from the previous state and adds its own fie
 {
   "policyDocId": "uuid",
   "s3Bucket": "policydiff-documents-...",
+  "s3Key": "{policyDocId}/document.pdf",
   "textractOutputKey": "{policyDocId}/textract-output.json",
   "payerName": "UnitedHealthcare",
   "planType": "Commercial",
   "documentTitle": "Infliximab Medical Benefit Drug Policy",
   "effectiveDate": "2026-02-01"
+}
+```
+
+### State 3.0 Output (classify_document)
+
+```json
+{
+  "...all input fields...",
+  "documentClass": "drug_specific",
+  "documentFormat": "pdf",
+  "extractionPromptId": "A",
+  "skipExtraction": false
 }
 ```
 
@@ -71,7 +96,9 @@ Every state receives the full event from the previous state and adds its own fie
   "structuredTextS3Key": "{policyDocId}/structured-text.json",
   "pageCount": 29,
   "sectionCount": 15,
-  "tableCount": 4
+  "tableCount": 4,
+  "boilerplateStripped": true,
+  "hasIndicationChunks": true
 }
 ```
 
@@ -82,7 +109,8 @@ Every state receives the full event from the previous state and adds its own fie
   "...all input fields...",
   "extractedCriteria": [{ "...DrugPolicyCriteria schema..." }],
   "extractionCount": 10,
-  "extractedCriteriaS3Key": "{policyDocId}/extracted-criteria.json"
+  "extractedCriteriaS3Key": "{policyDocId}/extracted-criteria.json",
+  "extractionPromptUsed": "A"
 }
 ```
 
@@ -563,7 +591,7 @@ Each Lambda requires the following environment variables (set by CDK Compute Sta
 
 ## 8. DrugPolicyCriteria Schema Reference
 
-Each extracted record follows this schema:
+Each extracted record follows this schema (enhanced per policy-pdf-analysis.md):
 
 ```json
 {
@@ -572,35 +600,53 @@ Each extracted record follows this schema:
   "drugName": "infliximab",
   "brandNames": ["Remicade", "Inflectra", "Avsola"],
   "indicationName": "rheumatoid arthritis",
-  "indicationICD10": "M05.79",
+  "indicationICD10": ["M05.79", "M06.00"],
   "payerName": "UnitedHealthcare",
   "effectiveDate": "2026-02-01",
+  "policyNumber": "2026D0004AR",
   "preferredProducts": [
     { "productName": "Inflectra", "rank": 1 },
     { "productName": "Avsola", "rank": 2 }
   ],
+  "initialAuthDurationMonths": 12,
   "initialAuthCriteria": [
     {
       "criterionText": "Patient must have failed at least one biosimilar infliximab product",
       "criterionType": "step_therapy",
+      "logicOperator": "AND",
       "requiredDrugsTriedFirst": ["Inflectra", "Avsola"],
-      "trialDurationWeeks": 14
+      "stepTherapyMinCount": 1,
+      "trialDurationWeeks": 14,
+      "rawExcerpt": "History of failure to 1 of the following..."
     }
   ],
-  "reauthorizationCriteria": [...],
+  "reauthorizationCriteria": [
+    {
+      "criterionText": "Patient demonstrated clinical response",
+      "criterionType": "continuation",
+      "maxAuthDurationMonths": 12,
+      "requiresDocumentation": "Chart notes documenting response"
+    }
+  ],
   "dosingLimits": {
     "maxDoseMg": 500,
     "maxFrequency": "every 8 weeks",
     "weightBased": true,
-    "maxDoseMgPerKg": 10
+    "maxDoseMgPerKg": 10,
+    "perFDALabel": false
   },
-  "combinationRestrictions": [],
+  "combinationRestrictions": [
+    { "restrictedWith": "adalimumab", "restrictionType": "same_class" }
+  ],
   "quantityLimits": { "maxUnitsPerPeriod": 6, "periodDays": 180 },
   "benefitType": "medical",
   "selfAdminAllowed": false,
+  "coveredStatus": "covered",
   "rawExcerpt": "Original policy text excerpt...",
   "confidence": 0.92,
   "needsReview": false,
+  "reviewReasons": [],
+  "extractionPromptVersion": "A",
   "extractedAt": "2026-04-03T12:00:00Z"
 }
 ```
