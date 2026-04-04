@@ -1,0 +1,8 @@
+{
+  "app": "python bin/app.py",
+  "context": {
+    "@aws-cdk/aws-apigateway:usagePlanKeyOrderInsensitiveId": true,
+    "@aws-cdk/core:stackRelativeExports": true,
+    "cdk-nag": true
+  }
+}
