@@ -6,10 +6,10 @@ export default function DashboardLayout({
     children: React.ReactNode;
 }) {
     return (
-        <div className="h-screen w-full bg-black flex overflow-hidden">
+        <div className="h-screen w-full bg-background flex overflow-hidden">
             <AppSidebar />
-            <main className="flex-1 flex flex-col min-w-0 min-h-0 bg-black overflow-hidden relative">
-                <div className="flex-1 overflow-auto bg-black text-white">
+            <main className="flex-1 flex flex-col min-w-0 min-h-0 bg-background overflow-hidden relative">
+                <div className="flex-1 overflow-auto bg-background text-foreground">
                     {children}
                 </div>
             </main>
