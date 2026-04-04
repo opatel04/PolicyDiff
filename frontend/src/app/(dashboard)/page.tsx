@@ -12,32 +12,45 @@ import {
     Plus,
     TableProperties
 } from "lucide-react";
+import { cn } from "@/lib/utils";
 import Link from "next/link";
 
 const stats = [
     {
         label: "Total Policies",
-        value: "142",
+        value: 142,
+        total: 142,
         icon: FileText,
-        color: "text-blue-500",
+        colorClass: "text-emerald-400",
+        strokeColor: "#34d399",
+        trend: "+12",
     },
     {
         label: "Drugs Tracked",
-        value: "24",
+        value: 24,
+        total: 142,
         icon: Database,
-        color: "text-emerald-500",
+        colorClass: "text-rose-400",
+        strokeColor: "#fb7185",
+        trend: "+4",
     },
     {
         label: "Payers Covered",
-        value: "8",
+        value: 8,
+        total: 12,
         icon: ShieldCheck,
-        color: "text-orange-500",
+        colorClass: "text-amber-400",
+        strokeColor: "#fbbf24",
+        trend: "+0",
     },
     {
         label: "Quarterly Changes",
-        value: "31",
+        value: 31,
+        total: 142,
         icon: TrendingUp,
-        color: "text-rose-500",
+        colorClass: "text-blue-400",
+        strokeColor: "#60a5fa",
+        trend: "+2",
     },
 ];
 
@@ -96,20 +109,27 @@ export default function DashboardPage() {
                 </div>
             </div>
 
-            <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-4">
-                {stats.map((stat) => (
-                    <Card key={stat.label}>
-                        <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-                            <CardTitle className="text-sm font-medium">
-                                {stat.label}
-                            </CardTitle>
-                            <stat.icon className={stat.color + " h-4 w-4"} />
-                        </CardHeader>
-                        <CardContent>
-                            <div className="text-2xl font-bold">{stat.value}</div>
-                        </CardContent>
-                    </Card>
-                ))}
+            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 divide-y md:divide-y-0 md:divide-x divide-border/50 py-4 mb-8">
+                {stats.map((stat, i) => {
+                    return (
+                        <div key={i} className="flex flex-col p-6 px-8 relative gap-6">
+                            <div className="flex justify-between items-center text-muted-text">
+                                <div className="flex items-center space-x-2">
+                                    <stat.icon className="w-4 h-4" />
+                                    <span className="text-[11px] font-semibold uppercase tracking-widest">{stat.label}</span>
+                                </div>
+                            </div>
+
+                            <div className="flex flex-col">
+                                <span className={cn("text-5xl font-light tabular-nums tracking-tight", stat.colorClass)}>{stat.value}</span>
+                                <div className="flex items-center mt-3 gap-2">
+                                    <span className={cn("text-sm font-medium", stat.colorClass)}>{stat.trend}</span>
+                                    <span className="text-xs text-muted-text/80">this quarter</span>
+                                </div>
+                            </div>
+                        </div>
+                    );
+                })}
             </div>
 
             <div className="grid gap-8 md:grid-cols-2 lg:grid-cols-7">
