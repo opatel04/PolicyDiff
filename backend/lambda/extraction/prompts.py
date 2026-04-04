@@ -71,45 +71,6 @@ Document text:
 
 
 # ─────────────────────────────────────────────────────────────────────────────
-# 10.6  Gemini Verification Prompt
-# Model: gemini-1.5-pro
-# Called from: Step Functions State 4.5 — GeminiVerification
-# ─────────────────────────────────────────────────────────────────────────────
-GEMINI_VERIFICATION_PROMPT = """\
-You are verifying the accuracy of an AI extraction of medical benefit drug \
-policy criteria. Another AI model extracted the following structured data from \
-the policy text. Your job is to identify any errors or misclassifications.
-
-Extracted data:
-{extracted}
-
-Original policy text (excerpt):
-{raw_text}
-
-Check specifically for:
-1. Incorrectly classified criterionType (e.g., a step_therapy requirement \
-labeled as "diagnosis")
-2. Missing required drugs in requiredDrugsTriedFirst
-3. Incorrect trial duration numbers
-4. Missing indications (a drug-indication pair present in the text but not \
-extracted)
-5. Incorrect benefitType classification
-
-For each issue found, specify: field, extractedValue, correctValue, \
-confidence (0-1).
-If no issues found, return empty issues array.
-
-Return JSON only:
-{{
-  "issues": [
-    {{ "field": string, "extractedValue": string, "correctValue": string, \
-"confidence": number }}
-  ],
-  "overallVerificationConfidence": number
-}}"""
-
-
-# ─────────────────────────────────────────────────────────────────────────────
 # 10.4  Temporal Diff Prompt
 # Model: anthropic.claude-sonnet-4-5  (Bedrock)
 # Called from: DiffLambda
