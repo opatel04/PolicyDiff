@@ -333,22 +333,34 @@ def generate_memo(approval_path_id: str, body: dict) -> dict:
 
 # ── Router ────────────────────────────────────────────────────────────────
 
+def _get_method_and_path(event: dict) -> tuple[str, str]:
+    """Support both REST API v1 and HTTP API v2 event shapes."""
+    if "requestContext" in event and "http" in event.get("requestContext", {}):
+        ctx = event["requestContext"]["http"]
+        return ctx.get("method", ""), event.get("rawPath", "")
+    return event.get("httpMethod", ""), event.get("resource", "")
+
+
 def lambda_handler(event: dict[str, Any], context: Any) -> dict[str, Any]:
     logger.info(json.dumps({"event_keys": list(event.keys())}))
 
-    if event.get("httpMethod") == "OPTIONS":
+    http_method, resource = _get_method_and_path(event)
+    if http_method == "OPTIONS":
         return {"statusCode": 200, "headers": _cors_headers(), "body": ""}
 
-    http_method = event.get("httpMethod", "")
-    resource = event.get("resource", "")
     path_params = event.get("pathParameters") or {}
+    if not path_params:
+        parts = resource.strip("/").split("/")
+        # /api/approval-path/{id}/memo → parts = ["api", "approval-path", "<id>", "memo"]
+        if len(parts) == 4 and parts[1] == "approval-path":
+            path_params = {"id": parts[2]}
 
     try:
         if http_method == "POST" and resource == "/api/approval-path":
             body = json.loads(event.get("body") or "{}")
             return score_approval_path(body)
 
-        elif http_method == "POST" and resource == "/api/approval-path/{id}/memo":
+        elif http_method == "POST" and resource.endswith("/memo"):
             body = json.loads(event.get("body") or "{}")
             return generate_memo(path_params.get("id", ""), body)
 
