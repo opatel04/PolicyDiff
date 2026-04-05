@@ -125,6 +125,7 @@ def _update_policy_status(
     indications_found: int,
     confidence_summary: dict,
     event: dict | None = None,
+    drug_names: list[str] | None = None,
 ) -> None:
     """Update the PolicyDocuments table with extraction results.
 
@@ -155,27 +156,74 @@ def _update_policy_status(
             pass  # Record already exists — expected
 
     try:
+        update_expr = (
+            "SET extractionStatus = :s, "
+            "indicationsFound = :n, "
+            "extractionProgress = :p, "
+            "confidenceSummary = :cs, "
+            "updatedAt = :u"
+        )
+        expr_values: dict = {
+            ":s": status,
+            ":n": indications_found,
+            ":p": f"Extracted {indications_found} drug-indication pairs",
+            ":cs": _convert_floats(confidence_summary),
+            ":u": now,
+        }
+        # Write back the primary drug name extracted from criteria
+        if drug_names:
+            primary_drug = drug_names[0]
+            update_expr += ", drugName = :dn, drugNames = :dns"
+            expr_values[":dn"] = primary_drug
+            expr_values[":dns"] = drug_names
         table.update_item(
             Key={"policyDocId": policy_doc_id},
-            UpdateExpression=(
-                "SET extractionStatus = :s, "
-                "indicationsFound = :n, "
-                "extractionProgress = :p, "
-                "confidenceSummary = :cs, "
-                "updatedAt = :u"
-            ),
-            ExpressionAttributeValues={
-                ":s": status,
-                ":n": indications_found,
-                ":p": f"Extracted {indications_found} drug-indication pairs",
-                ":cs": _convert_floats(confidence_summary),
-                ":u": now,
-            },
+            UpdateExpression=update_expr,
+            ExpressionAttributeValues=expr_values,
         )
-        logger.info(f"Updated policy {policy_doc_id} status to '{status}'")
+        logger.info(f"Updated policy {policy_doc_id} status to '{status}'" + (f", drugs={drug_names}" if drug_names else ""))
     except Exception as e:
         logger.error(f"Failed to update policy status: {e}")
         raise
+
+
+def _build_excerpt(record: dict) -> str:
+    """Build a meaningful text excerpt for embedding when rawExcerpt is absent.
+
+    Combines indicationName + all criterionText values into a single passage
+    that captures the full clinical meaning for semantic search.
+    """
+    parts: list[str] = []
+    drug = record.get("drugName", "")
+    indication = record.get("indicationName", "")
+    payer = record.get("payerName", "")
+    phase = record.get("approvalPhase", "")
+
+    header = f"{drug} — {indication}"
+    if payer:
+        header += f" ({payer})"
+    if phase:
+        header += f" [{phase}]"
+    parts.append(header)
+
+    for criteria_key in ("initialAuthCriteria", "reauthorizationCriteria"):
+        criteria = record.get(criteria_key, []) or []
+        for c in criteria:
+            if isinstance(c, dict) and c.get("criterionText"):
+                parts.append(c["criterionText"])
+
+    dosing = record.get("dosingPerIndication", []) or []
+    for d in dosing:
+        if isinstance(d, dict) and d.get("regimen"):
+            parts.append(f"Dosing: {d['regimen']}")
+
+    preferred = record.get("preferredProducts", []) or []
+    if preferred:
+        prods = ", ".join(p.get("productName", "") for p in preferred if isinstance(p, dict))
+        if prods:
+            parts.append(f"Preferred products: {prods}")
+
+    return "\n".join(p for p in parts if p)
 
 
 def _write_excerpt_files(policy_doc_id: str, criteria: list[dict], bucket: str) -> list[str]:
@@ -191,7 +239,8 @@ def _write_excerpt_files(policy_doc_id: str, criteria: list[dict], bucket: str) 
     keys: list[str] = []
     for record in criteria:
         drug_indication_id = record.get("drugIndicationId", "")
-        raw_excerpt = record.get("rawExcerpt", "") or record.get("indicationName", "")
+        # Use rawExcerpt if present, otherwise build from criteria text
+        raw_excerpt = record.get("rawExcerpt") or _build_excerpt(record)
         if not drug_indication_id or not raw_excerpt:
             continue
 
@@ -254,8 +303,13 @@ def lambda_handler(event: dict[str, Any], _context: Any) -> dict[str, Any]:
     # Write rawExcerpt text files to S3 so embed_and_index can vectorise them
     excerpt_keys = _write_excerpt_files(policy_doc_id, criteria, bucket)
 
+    # Collect unique drug names from extracted criteria to write back to PolicyDocuments
+    drug_names = list(dict.fromkeys(
+        r["drugName"] for r in criteria if r.get("drugName")
+    ))
+
     review_count = confidence_summary.get("reviewCount", 0)
     status = "review_required" if review_count > 0 else "complete"
-    _update_policy_status(policy_doc_id, status, records_written, confidence_summary, event)
+    _update_policy_status(policy_doc_id, status, records_written, confidence_summary, event, drug_names)
 
     return {**event, "writeStatus": "complete", "recordsWritten": records_written, "excerptKeys": excerpt_keys}
