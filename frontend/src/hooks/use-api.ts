@@ -89,23 +89,6 @@ export interface QueryResult {
   responseTimeMs: number;
 }
 
-export interface DiscordanceSummary {
-  diffId?: string;
-  drugName: string;
-  payerName: string;
-  discordanceScore: number | null;
-  summary: string;
-  changesCount?: number;
-  changes?: {
-    dimension: string;
-    medicalValue: string;
-    pharmacyValue: string;
-    moreRestrictive: string;
-    severity: string;
-  }[];
-  status?: string;
-}
-
 export interface PayerScore {
   payerName: string;
   score: number;
@@ -227,27 +210,6 @@ export function useCompare(
     enabled: !!drug,
     retry: shouldRetry,
     staleTime: 60_000,
-  });
-}
-
-export function useDiscordances() {
-  return useQuery({
-    queryKey: ["discordances"],
-    queryFn: () =>
-      apiFetch<{ items: DiscordanceSummary[]; count: number }>(
-        "api/discordance"
-      ),
-    retry: shouldRetry,
-    staleTime: 30_000,
-  });
-}
-
-export function useDiscordanceDetail(drug: string, payer: string) {
-  return useQuery({
-    queryKey: ["discordance-detail", drug, payer],
-    queryFn: () =>
-      apiFetch<DiscordanceSummary>(`api/discordance/${drug}/${payer}`),
-    enabled: !!drug && !!payer,
   });
 }
 
