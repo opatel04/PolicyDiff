@@ -187,7 +187,46 @@ def _update_policy_status(
         raise
 
 
-def _write_excerpt_files(policy_doc_id: str, criteria: list[dict], bucket: str) -> list[str]:
+def _build_excerpt(record: dict) -> str:
+    """Build a meaningful text excerpt for embedding when rawExcerpt is absent.
+
+    Combines indicationName + all criterionText values into a single passage
+    that captures the full clinical meaning for semantic search.
+    """
+    parts: list[str] = []
+    drug = record.get("drugName", "")
+    indication = record.get("indicationName", "")
+    payer = record.get("payerName", "")
+    phase = record.get("approvalPhase", "")
+
+    header = f"{drug} — {indication}"
+    if payer:
+        header += f" ({payer})"
+    if phase:
+        header += f" [{phase}]"
+    parts.append(header)
+
+    for criteria_key in ("initialAuthCriteria", "reauthorizationCriteria"):
+        criteria = record.get(criteria_key, []) or []
+        for c in criteria:
+            if isinstance(c, dict) and c.get("criterionText"):
+                parts.append(c["criterionText"])
+
+    dosing = record.get("dosingPerIndication", []) or []
+    for d in dosing:
+        if isinstance(d, dict) and d.get("regimen"):
+            parts.append(f"Dosing: {d['regimen']}")
+
+    preferred = record.get("preferredProducts", []) or []
+    if preferred:
+        prods = ", ".join(p.get("productName", "") for p in preferred if isinstance(p, dict))
+        if prods:
+            parts.append(f"Preferred products: {prods}")
+
+    return "\n".join(p for p in parts if p)
+
+
+
     """Write per-criteria rawExcerpt text files to S3 for embed_and_index.
 
     Key format: {policyDocId}/excerpts/{drugIndicationId}.txt
@@ -200,7 +239,8 @@ def _write_excerpt_files(policy_doc_id: str, criteria: list[dict], bucket: str) 
     keys: list[str] = []
     for record in criteria:
         drug_indication_id = record.get("drugIndicationId", "")
-        raw_excerpt = record.get("rawExcerpt", "") or record.get("indicationName", "")
+        # Use rawExcerpt if present, otherwise build from criteria text
+        raw_excerpt = record.get("rawExcerpt") or _build_excerpt(record)
         if not drug_indication_id or not raw_excerpt:
             continue
 
