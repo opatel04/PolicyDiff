@@ -50,7 +50,7 @@ interface DrugGroup {
 function groupByDrug(policies: PolicyDoc[]): DrugGroup[] {
     const map = new Map<string, PolicyDoc[]>();
     policies.forEach(p => {
-        const key = p.drugName || "Unknown Drug";
+        const key = p.drugName || p.documentTitle || "Unknown Policy";
         if (!map.has(key)) map.set(key, []);
         map.get(key)!.push(p);
     });
