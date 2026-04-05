@@ -72,6 +72,7 @@ class PolicyDiffApiStack(cdk.Stack):
         add_route("/api/policies", apigwv2.HttpMethod.POST, compute_stack.policy_crud_fn)
         add_route("/api/policies/{id}", apigwv2.HttpMethod.GET, compute_stack.policy_crud_fn)
         add_route("/api/policies/{id}/status", apigwv2.HttpMethod.GET, compute_stack.policy_crud_fn)
+        add_route("/api/policies/{id}/download", apigwv2.HttpMethod.GET, compute_stack.policy_crud_fn)
         add_route("/api/policies/{id}/criteria", apigwv2.HttpMethod.GET, compute_stack.policy_crud_fn)
         add_route("/api/policies", apigwv2.HttpMethod.GET, compute_stack.policy_crud_fn)
         add_route("/api/policies/{id}", apigwv2.HttpMethod.DELETE, compute_stack.policy_crud_fn)

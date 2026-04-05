@@ -17,6 +17,7 @@ import {
     Trash2Icon,
     AlertCircle,
     RefreshCw,
+    ExternalLink,
 } from "lucide-react";
 import Link from "next/link";
 import { usePolicies, useDeletePolicy, type PolicyDocument } from "@/hooks/use-api";
@@ -44,6 +45,7 @@ interface CriteriaItem {
     drugIndicationId?: string;
     drugName?: string;
     indicationName?: string;
+    hcpcsCode?: string;
     benefitType?: string;
     stepTherapyCount?: number;
     stepTherapyDrugs?: string[];
@@ -146,6 +148,20 @@ export default function DrugExplorerPage() {
         }
     };
 
+    const handleViewPdf = async (policyDocId: string) => {
+        try {
+            setPendingAction({ id: policyDocId, type: "view" });
+            const p = drugGroups.flatMap(g => g.policies).find(p => p.policyDocId === policyDocId);
+            const { downloadUrl } = await apiFetch<{ downloadUrl: string }>(`api/policies/${policyDocId}/download`);
+            window.open(downloadUrl, "_blank", "noopener,noreferrer");
+        } catch (err) {
+            console.error("Failed to generate PDF download URL", err);
+            alert("No PDF found for this policy or link generation failed.");
+        } finally {
+            setPendingAction(null);
+        }
+    };
+
     const handleDelete = (policyDocId: string) => {
         setPendingAction({ id: policyDocId, type: "delete" });
         deletePolicyMutation.mutate(policyDocId, {
@@ -159,7 +175,17 @@ export default function DrugExplorerPage() {
 
     const filtered = searchQuery.trim()
         ? drugGroups
-            .map(g => ({ group: g, score: fuzzyMatch(searchQuery, g.drugName) }))
+            .map(g => ({
+                group: g,
+                score: Math.max(
+                    fuzzyMatch(searchQuery, g.drugName),
+                    // also match on any J-code found in expanded criteria
+                    ...Object.values(expandedCriteria)
+                        .flat()
+                        .filter(c => c.drugName?.toLowerCase() === g.drugName.toLowerCase() && c.hcpcsCode)
+                        .map(c => fuzzyMatch(searchQuery, c.hcpcsCode!)),
+                ),
+            }))
             .filter(({ score }) => score > 0)
             .sort((a, b) => b.score - a.score)
             .map(({ group }) => group)
@@ -298,6 +324,27 @@ export default function DrugExplorerPage() {
                                                             </TooltipTrigger>
                                                             <TooltipContent>View Details</TooltipContent>
                                                         </Tooltip>
+                                                        <Tooltip>
+                                                            <TooltipTrigger asChild>
+                                                                <Button
+                                                                    variant="ghost"
+                                                                    size="icon"
+                                                                    className="h-8 w-8 text-muted-foreground hover:text-destructive"
+                                                                    disabled={group.policies.some(p => isBusy(p.policyDocId))}
+                                                                    onClick={() => {
+                                                                        if (confirm(`Delete ${group.policies.length === 1 ? "this policy" : `all ${group.policies.length} policies`} for ${group.drugName}?`)) {
+                                                                            group.policies.forEach(p => handleDelete(p.policyDocId));
+                                                                        }
+                                                                    }}
+                                                                >
+                                                                    {group.policies.some(p => isActionPending("delete", p.policyDocId))
+                                                                        ? <Loader2 className="size-4 animate-spin" />
+                                                                        : <Trash2Icon className="size-4" />
+                                                                    }
+                                                                </Button>
+                                                            </TooltipTrigger>
+                                                            <TooltipContent>Delete</TooltipContent>
+                                                        </Tooltip>
                                                     </div>
                                                 </TooltipProvider>
                                             </TableCell>
@@ -342,6 +389,25 @@ export default function DrugExplorerPage() {
                                                                             {policy.confidenceSummary?.averageConfidence != null && (
                                                                                 <span>Confidence: <span className="font-mono text-foreground">{Math.round(policy.confidenceSummary.averageConfidence * 100)}%</span></span>
                                                                             )}
+                                                                            <TooltipProvider>
+                                                                                <Tooltip>
+                                                                                    <TooltipTrigger asChild>
+                                                                                        <Button 
+                                                                                            variant="ghost" 
+                                                                                            size="icon" 
+                                                                                            className="h-6 w-6 ml-2 text-muted-foreground hover:text-sky-400"
+                                                                                            disabled={isBusy(policy.policyDocId)}
+                                                                                            onClick={() => handleViewPdf(policy.policyDocId)}
+                                                                                        >
+                                                                                            {isActionPending("view", policy.policyDocId) 
+                                                                                                ? <Loader2 className="size-3 animate-spin" />
+                                                                                                : <ExternalLink className="size-3" />
+                                                                                            }
+                                                                                        </Button>
+                                                                                    </TooltipTrigger>
+                                                                                    <TooltipContent>View Original PDF</TooltipContent>
+                                                                                </Tooltip>
+                                                                            </TooltipProvider>
                                                                         </div>
                                                                     </div>
 
@@ -358,8 +424,13 @@ export default function DrugExplorerPage() {
                                                                                 <div key={ci} className="px-5 py-4 space-y-3">
                                                                                     {/* Indication header */}
                                                                                     <div className="flex items-center justify-between">
-                                                                                        <div className="flex items-center gap-3">
+                                                                                        <div className="flex items-center gap-3 flex-wrap">
                                                                                             <p className="text-sm font-semibold">{c.indicationName || "Unknown Indication"}</p>
+                                                                                            {c.hcpcsCode && (
+                                                                                                <span className="text-[10px] font-mono px-2 py-0.5 rounded bg-primary/10 text-primary border border-primary/20 tracking-wider">
+                                                                                                    {c.hcpcsCode}
+                                                                                                </span>
+                                                                                            )}
                                                                                             {c.benefitType && (
                                                                                                 <span className="text-[10px] font-mono px-2 py-0.5 rounded bg-muted text-muted-foreground">{c.benefitType}</span>
                                                                                             )}
