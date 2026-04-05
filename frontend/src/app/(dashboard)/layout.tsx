@@ -1,10 +1,18 @@
+import { redirect } from "next/navigation";
 import { AppSidebar } from "@/components/sidebar";
+import { auth0 } from "@/lib/auth0";
 
-export default function DashboardLayout({
+export default async function DashboardLayout({
     children,
 }: {
     children: React.ReactNode;
 }) {
+    const session = await auth0.getSession();
+
+    if (!session) {
+        redirect("/landing");
+    }
+
     return (
         <div className="h-screen w-full bg-background flex overflow-hidden">
             <AppSidebar />
