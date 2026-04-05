@@ -51,10 +51,7 @@ for _var in _REQUIRED_ENV_VARS:
 dynamodb = boto3.resource("dynamodb")
 bedrock = boto3.client("bedrock-runtime", region_name=os.environ.get("REGION", "us-east-1"))
 
-# ADR: BEDROCK_MODEL_ID from env | common_env passes the full model ARN; empty string causes fast-fail at invoke time
-BEDROCK_MODEL_ID = os.environ.get("BEDROCK_MODEL_ID", "")
-if not BEDROCK_MODEL_ID:
-    logger.warning(json.dumps({"warning": "missing_env_var", "var": "BEDROCK_MODEL_ID"}))
+BEDROCK_MODEL_ID = os.environ.get("BEDROCK_MODEL_ID", "anthropic.claude-sonnet-4-5-20250514")
 
 
 def create_response(status_code: int, body: dict) -> dict:
