@@ -498,36 +498,36 @@ class PolicyDiffComputeStack(cdk.Stack):
         assemble_text = sfn_tasks.LambdaInvoke(
             self, "AssembleStructuredText",
             lambda_function=self.assemble_text_fn,
-            payload=sfn.TaskInput.from_json_path_at("$"),
-            payload_response_only=True,
+            result_selector={"Payload.$": "$.Payload"},
+            result_path="$",
         )
 
         classify_document = sfn_tasks.LambdaInvoke(
             self, "ClassifyDocument",
             lambda_function=self.classify_document_fn,
-            payload=sfn.TaskInput.from_json_path_at("$"),
-            payload_response_only=True,
+            result_selector={"Payload.$": "$.Payload"},
+            result_path="$",
         )
 
         bedrock_extraction = sfn_tasks.LambdaInvoke(
             self, "BedrockSchemaExtraction",
             lambda_function=self.bedrock_extract_fn,
-            payload=sfn.TaskInput.from_json_path_at("$"),
-            payload_response_only=True,
+            result_selector={"Payload.$": "$.Payload"},
+            result_path="$",
         )
 
         confidence_scoring = sfn_tasks.LambdaInvoke(
             self, "ConfidenceScoring",
             lambda_function=self.confidence_score_fn,
-            payload=sfn.TaskInput.from_json_path_at("$"),
-            payload_response_only=True,
+            result_selector={"Payload.$": "$.Payload"},
+            result_path="$",
         )
 
         write_to_dynamo = sfn_tasks.LambdaInvoke(
             self, "WriteToDynamoDB",
             lambda_function=self.write_criteria_fn,
-            payload=sfn.TaskInput.from_json_path_at("$"),
-            payload_response_only=True,
+            result_selector={"Payload.$": "$.Payload"},
+            result_path="$",
         )
 
         execution_complete = sfn.Succeed(self, "ExecutionComplete")
@@ -536,16 +536,16 @@ class PolicyDiffComputeStack(cdk.Stack):
         trigger_diff_state = sfn_tasks.LambdaInvoke(
             self, "TriggerDiffIfVersionExists",
             lambda_function=self.trigger_diff_fn,
-            payload=sfn.TaskInput.from_json_path_at("$"),
-            payload_response_only=True,
+            result_selector={"Payload.$": "$.Payload"},
+            result_path="$",
         )
 
         # State 6.5 — EmbedAndIndex (non-blocking: catches all errors and continues)
         embed_and_index = sfn_tasks.LambdaInvoke(
             self, "EmbedAndIndex",
             lambda_function=self.embed_index_fn,
-            payload=sfn.TaskInput.from_json_path_at("$"),
-            payload_response_only=True,
+            result_selector={"Payload.$": "$.Payload"},
+            result_path="$",
         )
         embed_and_index.add_catch(
             trigger_diff_state,
