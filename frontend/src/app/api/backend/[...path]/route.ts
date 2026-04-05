@@ -44,9 +44,7 @@ async function handleProxy(
 
   let token: string;
   try {
-    const tokenResult = await auth0.getAccessToken({
-      audience: process.env.AUTH0_AUDIENCE,
-    });
+    const tokenResult = await auth0.getAccessToken();
     token = tokenResult.token;
   } catch (error) {
     return NextResponse.json(
