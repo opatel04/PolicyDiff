@@ -264,6 +264,20 @@ export function useUserPreferences() {
   });
 }
 
+export function useUpdatePreferences() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (prefs: { watchedDrugs: string[]; watchedPayers: string[] }) =>
+      apiFetch("api/users/me/preferences", {
+        method: "PUT",
+        body: JSON.stringify(prefs),
+      }),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ["user-preferences"] });
+    },
+  });
+}
+
 // ── Mutations ────────────────────────────────────────────────────────────────
 
 export function useSubmitQuery() {
