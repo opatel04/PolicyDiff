@@ -1,7 +1,6 @@
 "use client";
 
 import { ReactNode } from "react";
-import { motion } from "motion/react";
 import { ArrowRight, FileText, RefreshCw, Search, CheckCircle2 } from "lucide-react";
 
 // --- Components ---
@@ -132,31 +131,17 @@ export default function App() {
             <Navbar />
 
             {/* Hero Section */}
-            <section className="relative z-0 pt-24 pb-32 px-6 overflow-hidden">
-                <div className="max-w-4xl mx-auto text-center mb-20">
-                    <motion.h1
-                        initial={{ opacity: 0, y: 20 }}
-                        animate={{ opacity: 1, y: 0 }}
-                        className="font-serif text-6xl md:text-8xl font-medium leading-[1.1] mb-8"
-                    >
+            <section className="relative isolate z-0 pt-24 pb-32 px-6 overflow-hidden">
+                <div className="relative z-10 max-w-4xl mx-auto text-center mb-20">
+                    <h1 className="font-serif text-6xl md:text-8xl font-medium leading-[1.1] mb-8">
                         Stop reading policy PDFs. <br />
                         <span className="italic">Start acting on data.</span>
-                    </motion.h1>
-                    <motion.p
-                        initial={{ opacity: 0, y: 20 }}
-                        animate={{ opacity: 1, y: 0 }}
-                        transition={{ delay: 0.1 }}
-                        className="text-xl md:text-2xl text-charcoal/60 max-w-2xl mx-auto leading-relaxed mb-12"
-                    >
+                    </h1>
+                    <p className="text-xl md:text-2xl text-charcoal/60 max-w-2xl mx-auto leading-relaxed mb-12">
                         PolicyDiff is a purpose-built medical benefit drug intelligence engine.
                         We turn 30-page payer PDFs into structured, comparable, and actionable insights in seconds.
-                    </motion.p>
-                    <motion.div
-                        initial={{ opacity: 0, y: 20 }}
-                        animate={{ opacity: 1, y: 0 }}
-                        transition={{ delay: 0.2 }}
-                        className="flex flex-col sm:flex-row items-center justify-center gap-6"
-                    >
+                    </p>
+                    <div className="flex flex-col sm:flex-row items-center justify-center gap-6">
                         <Button variant="secondary" href="/auth/login?returnTo=/">See the Demo</Button>
                         <Button
                             variant="tertiary"
@@ -164,16 +149,11 @@ export default function App() {
                         >
                             How it Works <ArrowRight size={18} />
                         </Button>
-                    </motion.div>
+                    </div>
                 </div>
 
                 {/* Hero Image Container */}
-                <motion.div
-                    initial={{ opacity: 0, scale: 0.95 }}
-                    animate={{ opacity: 1, scale: 1 }}
-                    transition={{ delay: 0.3, duration: 0.8 }}
-                    className="pointer-events-none max-w-6xl mx-auto relative"
-                >
+                <div className="pointer-events-none relative z-10 max-w-6xl mx-auto">
                     <div className="aspect-[16/10] bg-[#e89a74] rounded-2xl md:rounded-2xl overflow-hidden p-8 md:p-16 flex items-center justify-center">
                         <div className="w-full h-full bg-white rounded-xl shadow-2xl overflow-hidden editorial-shadow">
                             {/* Mock App UI */}
@@ -182,20 +162,16 @@ export default function App() {
                                 <div className="w-3 h-3 rounded-full bg-terracotta/20" />
                                 <div className="w-3 h-3 rounded-full bg-terracotta/20" />
                             </div>
-                            <div className="p-8">
-                                <div className="h-4 w-48 bg-terracotta/10 rounded mb-8" />
-                                <div className="grid grid-cols-4 gap-4 mb-4">
-                                    {[1, 2, 3, 4].map(i => <div key={i} className="h-8 bg-surface-low rounded" />)}
-                                </div>
-                                {[1, 2, 3, 4, 5].map(i => (
-                                    <div key={i} className="grid grid-cols-4 gap-4 mb-3">
-                                        {[1, 2, 3, 4].map(j => <div key={j} className="h-10 bg-surface-low/50 rounded" />)}
-                                    </div>
-                                ))}
+                            <div className="h-[calc(100%-3rem)] bg-white">
+                                <img
+                                    src="/dashboard.webp"
+                                    alt="PolicyDiff landing page dashboard preview"
+                                    className="h-full w-full object-cover object-top"
+                                />
                             </div>
                         </div>
                     </div>
-                </motion.div>
+                </div>
             </section>
 
             <Separator />
@@ -237,7 +213,7 @@ export default function App() {
                 <div className="max-w-7xl mx-auto flex flex-col gap-48">
 
                     {/* Section 1 */}
-                    <div id="insights" className="grid md:grid-cols-2 gap-20 items-center scroll-mt-25">
+                    <div id="insights" className="grid items-center gap-16 md:grid-cols-[minmax(0,0.82fr)_minmax(0,1.18fr)] lg:gap-20 scroll-mt-25">
                         <div className="max-w-lg">
                             <SectionLabel className="bg-[#D8E2CF] text-[#4A5D45]">Efficiency</SectionLabel>
                             <h2 className="font-serif text-5xl md:text-6xl font-medium mb-8 leading-tight">
@@ -255,33 +231,26 @@ export default function App() {
                                 </li>
                             </ul>
                         </div>
-                        <div className="bg-charcoal rounded-2xl aspect-square p-8 flex items-center justify-center overflow-hidden">
-                            <div className="w-full h-full opacity-40 bg-[radial-gradient(circle_at_center,_var(--tw-gradient-stops))] from-sage/20 via-transparent to-transparent" />
-                            <div className="absolute inset-0 p-12 flex flex-col gap-2">
-                                <div className="h-4 w-full bg-white/10 rounded" />
-                                <div className="grid grid-cols-12 gap-2 flex-1">
-                                    {Array.from({ length: 120 }).map((_, i) => (
-                                        <div key={i} className="bg-white/5 rounded-sm" />
-                                    ))}
-                                </div>
+                        <div className="w-full justify-self-end rounded-2xl aspect-[1812/1204] bg-[#f7f4ef] p-3 md:p-4">
+                            <div className="h-full w-full overflow-hidden rounded-[1.45rem] border-2 border-charcoal/90 bg-white shadow-[0_24px_50px_rgba(28,28,26,0.12)]">
+                                <img
+                                    src="/comparsion.webp"
+                                    alt="Cross-payer comparison dashboard preview"
+                                    className="h-full w-full object-contain object-center"
+                                />
                             </div>
                         </div>
                     </div>
 
                     {/* Section 2 */}
-                    <div className="grid md:grid-cols-2 gap-20 items-center">
-                        <div className="order-2 md:order-1 bg-[#4a807a] rounded-2xl aspect-square p-12 flex gap-6 items-center justify-center">
-                            <div className="w-1/2 h-4/5 bg-white rounded shadow-lg p-4 flex flex-col gap-2">
-                                <div className="h-2 w-12 bg-charcoal/10 rounded" />
-                                <div className="h-4 w-full bg-charcoal/5 rounded" />
-                                <div className="h-4 w-full bg-charcoal/5 rounded" />
-                                <div className="h-20 w-full bg-charcoal/5 rounded" />
-                            </div>
-                            <div className="w-1/2 h-4/5 bg-white rounded shadow-lg p-4 flex flex-col gap-2">
-                                <div className="h-2 w-12 bg-charcoal/10 rounded" />
-                                <div className="h-4 w-full bg-charcoal/5 rounded" />
-                                <div className="h-4 w-full bg-charcoal/5 rounded" />
-                                <div className="h-20 w-full bg-charcoal/5 rounded" />
+                    <div className="grid items-center gap-16 md:grid-cols-[minmax(0,1.05fr)_minmax(0,0.95fr)] lg:gap-20">
+                        <div className="order-2 md:order-1 w-full rounded-2xl aspect-[1792/1208] bg-[#4a807a] p-4 md:p-6">
+                            <div className="h-full w-full overflow-hidden rounded-[1.45rem] border-2 border-charcoal/25 bg-white shadow-[0_24px_50px_rgba(28,28,26,0.16)]">
+                                <img
+                                    src="/approval_path.webp"
+                                    alt="Approval path generator dashboard preview"
+                                    className="h-full w-full object-contain object-center"
+                                />
                             </div>
                         </div>
                         <div className="order-1 md:order-2 max-w-lg">
@@ -297,42 +266,14 @@ export default function App() {
                     </div>
 
                     {/* Section 3 */}
-                    <div className="grid md:grid-cols-2 gap-20 items-center">
-                        <div className="order-1 md:order-2 bg-[#F5F2ED] rounded-2xl aspect-square p-8 md:p-12 flex items-center justify-center relative overflow-hidden">
-                            {/* Search Terminal Mockup */}
-                            <div className="w-full bg-charcoal rounded-xl shadow-2xl overflow-hidden border border-white/10 flex flex-col">
-                                <div className="p-4 border-b border-white/5 flex items-center justify-between">
-                                    <div className="flex gap-1.5">
-                                        <div className="w-2 h-2 rounded-full bg-white/10" />
-                                        <div className="w-2 h-2 rounded-full bg-white/10" />
-                                        <div className="w-2 h-2 rounded-full bg-white/10" />
-                                    </div>
-                                    <div className="h-3 w-24 bg-white/5 rounded" />
-                                </div>
-                                <div className="p-6 space-y-6">
-                                    {/* Search Bar */}
-                                    <div className="relative">
-                                        <div className="w-full h-12 bg-white/5 rounded-lg border border-white/10 flex items-center px-4 gap-3">
-                                            <div className="w-4 h-4 rounded-full border-2 border-white/20" />
-                                            <span className="text-white/30 text-xs font-mono">What are the step therapy rules for...</span>
-                                        </div>
-                                    </div>
-                                    {/* Suggested Queries */}
-                                    <div className="flex gap-2">
-                                        <div className="px-3 py-1.5 bg-white/5 rounded-full text-[10px] text-white/40 border border-white/10">Infliximab Aetna</div>
-                                        <div className="px-3 py-1.5 bg-white/5 rounded-full text-[10px] text-white/40 border border-white/10">Prior Auth</div>
-                                    </div>
-                                    {/* Response Panel */}
-                                    <div className="bg-white/[0.02] rounded-lg p-5 border border-white/5 space-y-3">
-                                        <div className="h-2 w-full bg-white/20 rounded" />
-                                        <div className="h-2 w-full bg-white/20 rounded" />
-                                        <div className="h-2 w-4/5 bg-white/20 rounded" />
-                                        <div className="pt-4 flex items-center gap-2">
-                                            <div className="w-4 h-4 bg-terracotta/20 rounded flex items-center justify-center text-[8px] text-terracotta font-bold">1</div>
-                                            <span className="text-[10px] text-white/30 italic">Aetna Medical Policy #0341, Page 12</span>
-                                        </div>
-                                    </div>
-                                </div>
+                    <div className="grid items-center gap-16 md:grid-cols-[minmax(0,0.92fr)_minmax(0,1.08fr)] lg:gap-20">
+                        <div className="order-1 md:order-2 w-full justify-self-end rounded-2xl bg-[#F5F2ED] p-4 md:p-6">
+                            <div className="mx-auto w-full max-w-[34rem] overflow-hidden rounded-[1.45rem] border-2 border-charcoal/85 bg-white shadow-[0_24px_50px_rgba(28,28,26,0.12)]">
+                                <img
+                                    src="/ai_screenshot.webp"
+                                    alt="AI search cited answers dashboard preview"
+                                    className="h-auto w-full object-contain"
+                                />
                             </div>
                         </div>
                         <div className="order-2 md:order-1 max-w-lg">
