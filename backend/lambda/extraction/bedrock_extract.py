@@ -11,6 +11,9 @@
 #   - Extended drugIndicationId: {drug}#{productName}#{icd10_or_indication}
 #   - approvalPhase-aware drugIndicationId for Cigna 3-phase docs
 #
+# Pipeline is in-memory/pass-through: no DynamoDB reads/writes, no S3 criteria write.
+# S3 is used only to READ the structured text produced by assemble_text.
+#
 # Step Functions I/O:
 #   Input:  { policyDocId, s3Bucket, structuredTextS3Key,
 #             payerName, planType, documentTitle, effectiveDate,
@@ -77,7 +80,6 @@ def _repair_truncated_json(text: str) -> str:
     text = text.strip()
     if not text.startswith("["):
         return text
-    # Count open braces/brackets to determine what needs closing
     depth = 0
     in_string = False
     escape_next = False
@@ -102,7 +104,6 @@ def _repair_truncated_json(text: str) -> str:
                 last_complete = i + 1
         elif ch == "[" and depth == 0:
             pass
-    # Truncate to last complete object and close the array
     if last_complete > 0:
         return text[:last_complete] + "]"
     return text
@@ -293,26 +294,10 @@ def lambda_handler(event: dict[str, Any], _context: Any) -> dict[str, Any]:
     structured_key: str = event["structuredTextS3Key"]
     doc_class: str = event.get("documentClass", "drug_specific")
 
-    # Enrich metadata from DynamoDB if missing (direct S3 upload path)
     payer_name: str = event.get("payerName", "")
     if not payer_name:
-        try:
-            dynamodb = boto3.resource("dynamodb")
-            table = dynamodb.Table(os.environ.get("POLICY_DOCUMENTS_TABLE", "PolicyDocuments"))
-            result = table.get_item(Key={"policyDocId": policy_doc_id})
-            item = result.get("Item", {})
-            event = {
-                **event,
-                "payerName": item.get("payerName", "Unknown"),
-                "planType": item.get("planType", "Commercial"),
-                "documentTitle": item.get("documentTitle", "Unknown Policy"),
-                "effectiveDate": item.get("effectiveDate", ""),
-            }
-            payer_name = event["payerName"]
-            logger.info(json.dumps({"action": "enriched_from_dynamo", "payerName": payer_name}))
-        except Exception as e:
-            logger.warning(f"Could not enrich metadata from DynamoDB: {e}")
-            payer_name = "Unknown"
+        logger.warning(json.dumps({"warning": "payerName_missing", "policyDocId": policy_doc_id}))
+        payer_name = "Unknown"
 
     # Skip extraction for index-only document classes
     from extraction.prompts import NO_EXTRACTION_CLASSES
@@ -374,13 +359,10 @@ def lambda_handler(event: dict[str, Any], _context: Any) -> dict[str, Any]:
 
                 # Annotate records with chunk-level context
                 for rec in records:
-                    # Carry over productName from multi-product chunks
                     if chunk_data.get("productName") and not rec.get("productName"):
                         rec["productName"] = chunk_data["productName"]
-                    # Mark unproven/excluded lists
                     if chunk_data.get("chunkType") == "unproven_list":
                         rec.setdefault("coveredStatus", "unproven")
-                    # Mark formulary entries
                     if chunk_data.get("chunkType") == "formulary_batch":
                         rec["documentClass"] = "formulary"
 
@@ -424,122 +406,19 @@ def lambda_handler(event: dict[str, Any], _context: Any) -> dict[str, Any]:
         record["payerName"] = payer_name
         record["effectiveDate"] = event.get("effectiveDate", "")
         record["extractionPromptVersion"] = resolved_prompt_id
+        # Normalize drugName to lowercase for consistent cross-payer matching
+        if record.get("drugName"):
+            record["drugName"] = record["drugName"].strip().lower()
+        # F_PREFERRED records have no indicationName — synthesize from drugClass
+        # so drugIndicationId doesn't fall back to "unknown"
+        if not record.get("indicationName") and record.get("drugClass"):
+            record["indicationName"] = record["drugClass"]
         record["drugIndicationId"] = _build_drug_indication_id(record)
-
-    # 5.5 PSM companion merge — when processing a PSM doc, push preferredProducts
-    #     back into the companion IP policy's existing DynamoDB records
-    if resolved_prompt_id == "F":
-        companion_ip = event.get("companionIpNumber", "")
-        if companion_ip:
-            _merge_psm_into_companion(all_criteria, companion_ip, payer_name)
-
-    # 6. Write to S3
-    criteria_key = f"{policy_doc_id}/extracted-criteria.json"
-    s3.put_object(
-        Bucket=s3_bucket,
-        Key=criteria_key,
-        Body=json.dumps(all_criteria, default=str),
-        ContentType="application/json",
-    )
 
     return {
         **event,
         "extractedCriteria": all_criteria,
         "extractionCount": len(all_criteria),
-        "extractedCriteriaS3Key": criteria_key,
+        "extractedCriteriaS3Key": "",
         "extractionPromptUsed": resolved_prompt_id,
     }
-
-
-# ── PSM Companion Merge ──────────────────────────────────────────────────────
-
-def _merge_psm_into_companion(
-    psm_records: list[dict],
-    companion_ip_number: str,
-    payer_name: str,
-) -> None:
-    """Merge PSM preferredProducts into companion IP policy records in DynamoDB.
-
-    When a Cigna PSM document is processed, this function:
-    1. Finds the companion IP policy's policyDocId by querying on policyNumber
-    2. Loads existing criteria records for that policy
-    3. Updates each record's preferredProducts with PSM data
-    4. Marks records with psmMerged: true so confidence scoring knows
-
-    This is a best-effort merge — failures are logged but do not block extraction.
-    """
-    if not psm_records:
-        return
-
-    # Extract preferred products from PSM records
-    psm_preferred = []
-    psm_non_preferred = []
-    for rec in psm_records:
-        if isinstance(rec, dict):
-            psm_preferred.extend(rec.get("preferredProducts", []))
-            psm_non_preferred.extend(rec.get("nonPreferredProducts", []))
-
-    if not psm_preferred and not psm_non_preferred:
-        logger.info("PSM merge: no preferred/non-preferred products to merge")
-        return
-
-    try:
-        dynamodb = boto3.resource("dynamodb")
-        criteria_table_name = os.environ.get("DRUG_POLICY_CRITERIA_TABLE", "DrugPolicyCriteria")
-        policy_docs_table_name = os.environ.get("POLICY_DOCUMENTS_TABLE", "PolicyDocuments")
-
-        # Step 1: Find companion IP policy's policyDocId
-        policy_table = dynamodb.Table(policy_docs_table_name)
-        # Scan for matching policyNumber + payerName (small table, acceptable)
-        scan_result = policy_table.scan(
-            FilterExpression="policyNumber = :pn AND payerName = :pay",
-            ExpressionAttributeValues={":pn": companion_ip_number, ":pay": payer_name},
-            ProjectionExpression="policyDocId",
-        )
-        companion_docs = scan_result.get("Items", [])
-        if not companion_docs:
-            logger.warning(f"PSM merge: companion IP policy {companion_ip_number} not found in DynamoDB")
-            return
-
-        companion_doc_id = companion_docs[0]["policyDocId"]
-        logger.info(f"PSM merge: found companion policyDocId={companion_doc_id}")
-
-        # Step 2: Query criteria records for companion policy
-        criteria_table = dynamodb.Table(criteria_table_name)
-        criteria_result = criteria_table.query(
-            KeyConditionExpression="policyDocId = :pid",
-            ExpressionAttributeValues={":pid": companion_doc_id},
-        )
-        companion_records = criteria_result.get("Items", [])
-        if not companion_records:
-            logger.warning(f"PSM merge: no criteria records found for {companion_doc_id}")
-            return
-
-        # Step 3: Update each companion record with PSM data
-        updated_count = 0
-        for record in companion_records:
-            drug_indication_id = record.get("drugIndicationId", "")
-            try:
-                update_expr = "SET preferredProducts = :pp, psmMerged = :m"
-                expr_values = {":pp": psm_preferred, ":m": True}
-                if psm_non_preferred:
-                    update_expr += ", nonPreferredProducts = :npp"
-                    expr_values[":npp"] = psm_non_preferred
-
-                criteria_table.update_item(
-                    Key={
-                        "policyDocId": companion_doc_id,
-                        "drugIndicationId": drug_indication_id,
-                    },
-                    UpdateExpression=update_expr,
-                    ExpressionAttributeValues=expr_values,
-                )
-                updated_count += 1
-            except Exception as e:
-                logger.warning(f"PSM merge: failed to update {drug_indication_id}: {e}")
-
-        logger.info(f"PSM merge: updated {updated_count}/{len(companion_records)} records for {companion_doc_id}")
-
-    except Exception as e:
-        logger.error(f"PSM merge failed (non-fatal): {e}")
-

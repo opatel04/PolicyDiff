@@ -54,8 +54,20 @@ def _batch_write_criteria(criteria: list[dict]) -> int:
     now = datetime.now(timezone.utc).isoformat()
     written = 0
 
+    # Deduplicate by composite key (policyDocId, drugIndicationId) — last record wins.
+    # BatchWriteItem rejects batches containing duplicate keys.
+    seen: dict[tuple, dict] = {}
+    for record in criteria:
+        pk = (record.get("policyDocId", ""), record.get("drugIndicationId", ""))
+        if pk in seen:
+            logger.warning(f"Duplicate key {pk[1]} for doc {pk[0]} — keeping last record")
+        seen[pk] = record
+    deduped = list(seen.values())
+    if len(deduped) < len(criteria):
+        logger.info(f"Deduped {len(criteria) - len(deduped)} duplicate criteria records")
+
     with table.batch_writer() as batch:
-        for record in criteria:
+        for record in deduped:
             if not record.get("policyDocId") or not record.get("drugIndicationId"):
                 logger.warning(f"Skipping record missing required keys: {record.get('drugName', '?')}")
                 continue
@@ -89,8 +101,18 @@ def _batch_write_formulary_entries(entries: list[dict]) -> int:
     now = datetime.now(timezone.utc).isoformat()
     written = 0
 
+    # Deduplicate by composite key before batch write
+    seen: dict[tuple, dict] = {}
+    for entry in entries:
+        hcpcs = entry.get("hcpcsCode", "unknown")
+        drug = entry.get("drugName", "unknown")
+        entry.setdefault("drugIndicationId", f"{hcpcs}#{drug}")
+        pk = (entry.get("policyDocId", ""), entry["drugIndicationId"])
+        seen[pk] = entry
+    deduped = list(seen.values())
+
     with table.batch_writer() as batch:
-        for entry in entries:
+        for entry in deduped:
             policy_doc_id = entry.get("policyDocId", "")
             hcpcs = entry.get("hcpcsCode", "unknown")
             drug = entry.get("drugName", "unknown")
@@ -99,8 +121,6 @@ def _batch_write_formulary_entries(entries: list[dict]) -> int:
                 logger.warning("Skipping formulary entry: missing policyDocId")
                 continue
 
-            # Use drugIndicationId slot as SK for table compatibility
-            entry.setdefault("drugIndicationId", f"{hcpcs}#{drug}")
             entry["extractedAt"] = now
 
             item = _convert_floats(entry)
