@@ -642,7 +642,7 @@ def _extract_kv_pairs_from_blocks(blocks: list[dict]) -> list[dict]:
 
         key_text = _get_text_from_relations(block, block_map)
         value_text = ""
-        for rel in block.get("Relationships", []):
+        for rel in (block.get("Relationships") or []):
             if rel["Type"] == "VALUE":
                 for vid in rel["Ids"]:
                     vblock = block_map.get(vid)
@@ -657,7 +657,7 @@ def _extract_kv_pairs_from_blocks(blocks: list[dict]) -> list[dict]:
 
 def _get_text_from_relations(block: dict, block_map: dict) -> str:
     parts: list[str] = []
-    for rel in block.get("Relationships", []):
+    for rel in (block.get("Relationships") or []):
         if rel["Type"] != "CHILD":
             continue
         for cid in rel["Ids"]:
