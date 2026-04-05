@@ -9,23 +9,13 @@ import {
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import Link from "next/link";
-import { useState, useRef, useEffect } from "react";
+import { useState, useRef, useEffect, useMemo } from "react";
 import { useDiffsFeed, usePolicies, useUserPreferences, useRecentQueries } from "@/hooks/use-api";
 
-// ── Search data ───────────────────────────────────────────────────────────────
-
-const allDrugs = [
-    { name: "Infliximab",    brands: "Remicade, Inflectra, Avsola",    payers: 6 },
-    { name: "Adalimumab",    brands: "Humira, Amjevita, Cyltezo",       payers: 4 },
-    { name: "Ustekinumab",   brands: "Stelara, Wezlana",               payers: 4 },
-    { name: "Rituximab",     brands: "Rituxan, Truxima, Ruxience",      payers: 2 },
-    { name: "Secukinumab",   brands: "Cosentyx",                        payers: 3 },
-    { name: "Dupilumab",     brands: "Dupixent",                        payers: 5 },
-    { name: "Vedolizumab",   brands: "Entyvio",                         payers: 3 },
-    { name: "Apremilast",    brands: "Otezla",                          payers: 2 },
-];
+// ── Search helpers ────────────────────────────────────────────────────────────
 
 function fuzzyMatch(query: string, target: string): number {
+    if (!target) return 0;
     const q = query.toLowerCase();
     const t = target.toLowerCase();
     if (t.includes(q)) return 1000 + (1000 - t.indexOf(q));
@@ -39,6 +29,12 @@ function fuzzyMatch(query: string, target: string): number {
         }
     }
     return qi === q.length ? score : 0;
+}
+
+interface DrugSearchEntry {
+    name: string;
+    payers: string[];
+    hcpcsCode?: string;
 }
 
 function severityToType(severity: string): "Clinical" | "Cosmetic" {
@@ -112,9 +108,32 @@ export default function DashboardPage() {
     const [open, setOpen] = useState(false);
     const searchRef = useRef<HTMLDivElement>(null);
 
+    // Build live drug list from real policy data
+    const drugSearchList: DrugSearchEntry[] = useMemo(() => {
+        if (!policiesData?.items?.length) return [];
+        const map = new Map<string, { payers: Set<string>; hcpcsCode?: string }>();
+        policiesData.items.forEach(p => {
+            if (!p.drugName) return;
+            if (!map.has(p.drugName)) map.set(p.drugName, { payers: new Set() });
+            const entry = map.get(p.drugName)!;
+            if (p.payerName) entry.payers.add(p.payerName);
+        });
+        return Array.from(map.entries()).map(([name, data]) => ({
+            name,
+            payers: Array.from(data.payers),
+            hcpcsCode: data.hcpcsCode,
+        }));
+    }, [policiesData]);
+
     const results = query.trim()
-        ? allDrugs
-            .map((d) => ({ drug: d, score: Math.max(fuzzyMatch(query, d.name), fuzzyMatch(query, d.brands)) }))
+        ? drugSearchList
+            .map((d) => ({
+                drug: d,
+                score: Math.max(
+                    fuzzyMatch(query, d.name),
+                    d.hcpcsCode ? fuzzyMatch(query, d.hcpcsCode) : 0,
+                ),
+            }))
             .filter(({ score }) => score > 0)
             .sort((a, b) => b.score - a.score)
             .map(({ drug }) => drug)
@@ -204,7 +223,10 @@ export default function DashboardPage() {
                                         <Pill className="h-4 w-4 text-primary shrink-0" />
                                         <div className="min-w-0">
                                             <p className="text-sm font-medium font-mono">{drug.name}</p>
-                                            <p className="text-xs text-muted-foreground truncate">{drug.brands}</p>
+                                            <p className="text-xs text-muted-foreground truncate">
+                                                {drug.hcpcsCode ? <span className="mr-2 text-primary/70">{drug.hcpcsCode}</span> : null}
+                                                {drug.payers.length > 0 ? `${drug.payers.length} payer${drug.payers.length !== 1 ? "s" : ""}` : "No payer data"}
+                                            </p>
                                         </div>
                                     </div>
                                     <div className="flex items-center gap-1.5 shrink-0 ml-4 opacity-0 group-hover:opacity-100 transition-opacity">

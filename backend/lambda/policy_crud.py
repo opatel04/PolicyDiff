@@ -31,11 +31,13 @@ CORS_ORIGIN = os.environ.get("CORS_ORIGIN", "*")
 
 # ADR: Module-level resource | Reused across warm invocations
 dynamodb = boto3.resource("dynamodb")
+s3_client = boto3.client("s3")
 
 _REQUIRED_ENV_VARS = [
     "POLICY_DOCUMENTS_TABLE",
     "DRUG_POLICY_CRITERIA_TABLE",
     "USER_PREFERENCES_TABLE",
+    "DOCUMENTS_BUCKET_NAME",
 ]
 for _var in _REQUIRED_ENV_VARS:
     if not os.environ.get(_var):
@@ -105,6 +107,10 @@ def lambda_handler(event: dict[str, Any], context: Any) -> dict[str, Any]:
         # GET /api/policies/{id}/status
         elif http_method == "GET" and (resource == "/api/policies/{id}/status" or resource.endswith("/status")):
             return handle_get_status(event)
+
+        # GET /api/policies/{id}/download
+        elif http_method == "GET" and (resource == "/api/policies/{id}/download" or resource.endswith("/download")):
+            return handle_download_policy(event)
 
         # GET /api/policies/{id}/criteria
         elif http_method == "GET" and (resource == "/api/policies/{id}/criteria" or resource.endswith("/criteria")):
@@ -260,6 +266,39 @@ def handle_get_policy(event: dict) -> dict:
         return create_response(404, {"message": "Policy not found"})
 
     return create_response(200, item)
+
+
+def handle_download_policy(event: dict) -> dict:
+    table_name = os.environ.get("POLICY_DOCUMENTS_TABLE")
+    bucket_name = os.environ.get("DOCUMENTS_BUCKET_NAME")
+    if not table_name or not bucket_name:
+        return create_response(500, {"message": "Server configuration error"})
+
+    policy_doc_id = (event.get("pathParameters") or {}).get("id")
+    if not policy_doc_id:
+        return create_response(400, {"message": "Missing path parameter: id"})
+
+    table = dynamodb.Table(table_name)
+    result = table.get_item(
+        Key={"policyDocId": policy_doc_id},
+        ProjectionExpression="s3Key"
+    )
+    item = result.get("Item")
+    if not item or not item.get("s3Key"):
+        return create_response(404, {"message": "Policy document or s3Key not found"})
+
+    s3_key = item["s3Key"]
+
+    try:
+        url = s3_client.generate_presigned_url(
+            ClientMethod="get_object",
+            Params={"Bucket": bucket_name, "Key": s3_key},
+            ExpiresIn=900,
+        )
+        return create_response(200, {"downloadUrl": url})
+    except ClientError as e:
+        logger.error(json.dumps({"error": "presigned_url_generation_failed", "detail": str(e)}))
+        return create_response(500, {"message": "Failed to generate download URL"})
 
 
 def handle_get_status(event: dict) -> dict:

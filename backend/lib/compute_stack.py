@@ -264,6 +264,7 @@ class PolicyDiffComputeStack(cdk.Stack):
         storage_stack.policy_documents_table.grant_read_write_data(self.policy_crud_fn)
         storage_stack.drug_policy_criteria_table.grant_read_write_data(self.policy_crud_fn)
         storage_stack.user_preferences_table.grant_read_write_data(self.policy_crud_fn)
+        storage_stack.policy_bucket.grant_read(self.policy_crud_fn)
 
         # PolicyMonitorLambda — grant_read covers s3:GetObject + s3:ListBucket
         storage_stack.policy_bucket.grant_read(self.policy_monitor_fn)
