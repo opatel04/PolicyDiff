@@ -491,35 +491,111 @@ def _batch_priority_health_formulary(tables: list[dict]) -> list[dict] | None:
 
 # ── BCBS NC Preferred Injectable drug-class splitting ────────────────────────
 
-# Matches drug-class section headers like "Bevacizumab Agents", "Rituximab Agents",
-# "Trastuzumab Agents", or standalone drug class names in ALL CAPS / Title Case
+# Matches drug-class section headers like:
+#   "Bevacizumab Agents", "Rituximab Agents"
+#   "Preferred Rituximab Containing Agent(s)"
+#   "Non-Preferred Bevacizumab Containing Agent(s)"
+#   standalone drug class names in ALL CAPS
 _BCBS_DRUG_CLASS_RE = re.compile(
-    r"(?:^|\n)([A-Z][a-z]+(?:umab|imab|uzumab|ximab|inib))\s+Agents?\b"
+    r"(?:^|\n)(?:(?:Preferred|Non-?Preferred)\s+)?"
+    r"([A-Z][a-z]+(?:umab|imab|uzumab|ximab|inib))"
+    r"\s+(?:Containing\s+)?(?:Agents?|Products?|Biosimilars?)\s*(?:\(s\))?"
     r"|(?:^|\n)(BEVACIZUMAB|RITUXIMAB|TRASTUZUMAB|PERTUZUMAB|INFLIXIMAB|ADALIMUMAB)"
-    r"\s+(?:AGENTS?|PRODUCTS?|BIOSIMILARS?)\b",
+    r"\s+(?:AGENTS?|PRODUCTS?|BIOSIMILARS?|CONTAINING)\b",
     re.IGNORECASE | re.MULTILINE,
 )
 
-# Known biosimilar → drug class mapping for validation
-_BIOSIMILAR_DRUG_CLASS = {
+# Regex specifically for "Preferred/Non-Preferred X Containing Agent(s)" headers
+# Used for fine-grained preferred/non-preferred windowing within a family
+_BCBS_PREFERRED_HEADER_RE = re.compile(
+    r"(?:^|\n)(Preferred|Non-?Preferred)\s+"
+    r"([A-Z][a-z]+(?:umab|imab|uzumab|ximab|inib))"
+    r"\s+Containing\s+Agent\(?s?\)?",
+    re.IGNORECASE | re.MULTILINE,
+)
+
+# Known biosimilar → drug family mapping for cross-family validation
+_BIOSIMILAR_DRUG_FAMILY: dict[str, str] = {
+    # bevacizumab family
     "mvasi": "bevacizumab", "zirabev": "bevacizumab", "avastin": "bevacizumab",
-    "vegzelma": "bevacizumab",
+    "vegzelma": "bevacizumab", "alymsys": "bevacizumab",
+    # rituximab family
     "riabni": "rituximab", "ruxience": "rituximab", "truxima": "rituximab",
     "rituxan": "rituximab", "rituxan hycela": "rituximab",
+    # trastuzumab family
     "ogivri": "trastuzumab", "herzuma": "trastuzumab", "ontruzant": "trastuzumab",
     "trazimera": "trastuzumab", "kanjinti": "trastuzumab", "herceptin": "trastuzumab",
     "herceptin hylecta": "trastuzumab",
+    # pertuzumab family
+    "perjeta": "pertuzumab", "phesgo": "pertuzumab",
 }
 
 
-def _split_bcbs_preferred_injectable(text: str) -> list[dict] | None:
-    """Split BCBS NC Preferred Injectable policy into per-drug-class chunks.
+def _get_drug_family(product_name: str) -> str | None:
+    """Look up the drug family for a product/brand name."""
+    return _BIOSIMILAR_DRUG_FAMILY.get(product_name.lower().strip())
 
-    Each drug class section (bevacizumab, rituximab, trastuzumab, etc.) is
+
+def _split_bcbs_preferred_injectable(text: str) -> list[dict] | None:
+    """Split BCBS NC Preferred Injectable policy into per-drug-family chunks.
+
+    Each drug family section (bevacizumab, rituximab, trastuzumab, etc.) is
     extracted as a separate chunk so that Bedrock processes them independently,
-    preventing cross-contamination of preferred products across drug classes.
-    Returns None if fewer than 2 drug class sections are found.
+    preventing cross-contamination of preferred products across drug families.
+
+    For each family, preferred + non-preferred sub-sections are merged into ONE
+    chunk so the LLM sees both tiers together.
+
+    Returns None if fewer than 2 drug family sections are found.
     """
+    # Use fine-grained preferred/non-preferred header regex first
+    pref_matches = list(_BCBS_PREFERRED_HEADER_RE.finditer(text))
+
+    if len(pref_matches) >= 2:
+        # Group by drug family: merge preferred + non-preferred into one chunk per family
+        family_spans: dict[str, list[tuple[int, int, str]]] = {}  # family → [(start, end, tier)]
+        for i, m in enumerate(pref_matches):
+            tier = m.group(1).lower().replace("-", "")  # "preferred" or "nonpreferred"
+            family = m.group(2).lower().strip()
+            start = m.start()
+            end = pref_matches[i + 1].start() if i + 1 < len(pref_matches) else len(text)
+            if family not in family_spans:
+                family_spans[family] = []
+            family_spans[family].append((start, end, tier))
+
+        if len(family_spans) >= 2:
+            preamble = text[:pref_matches[0].start()].strip()
+            if len(preamble) > 3000:
+                preamble = preamble[-3000:]
+
+            chunks: list[dict] = []
+            for family, spans in family_spans.items():
+                # Merge all spans for this family into one text block
+                merged_text_parts = []
+                for (s, e, tier) in sorted(spans, key=lambda x: x[0]):
+                    merged_text_parts.append(text[s:e].strip())
+                family_text = "\n\n".join(merged_text_parts)
+
+                if len(family_text) < 50:
+                    continue
+
+                chunks.append({
+                    "indicationText": family_text,
+                    "preamble": preamble,
+                    "chunkType": "per_drug_class",
+                    "drugClass": family,
+                    "drugFamily": family,
+                    "productName": family,
+                })
+
+            if chunks:
+                logger.info(
+                    f"BCBS preferred injectable: {len(chunks)} drug-family chunks (preferred/non-preferred grouped) — "
+                    + ", ".join(c["drugFamily"] for c in chunks)
+                )
+                return chunks
+
+    # Fallback: use broad drug-class regex
     matches = list(_BCBS_DRUG_CLASS_RE.finditer(text))
     if len(matches) < 2:
         logger.info("BCBS preferred injectable: fewer than 2 drug class sections found, not splitting")
@@ -534,12 +610,11 @@ def _split_bcbs_preferred_injectable(text: str) -> list[dict] | None:
     if len(deduped) < 2:
         return None
 
-    # Extract preamble (text before first drug class section)
     preamble = text[:deduped[0].start()].strip()
     if len(preamble) > 3000:
-        preamble = preamble[-3000:]  # keep tail end (more relevant)
+        preamble = preamble[-3000:]
 
-    chunks: list[dict] = []
+    chunks = []
     for i, match in enumerate(deduped):
         start = match.start()
         end = deduped[i + 1].start() if i + 1 < len(deduped) else len(text)
@@ -548,7 +623,6 @@ def _split_bcbs_preferred_injectable(text: str) -> list[dict] | None:
         if len(section_text) < 50:
             continue
 
-        # Extract drug class name from match groups
         drug_class = (match.group(1) or match.group(2) or "Unknown").strip()
         drug_class_lower = drug_class.lower()
 
@@ -557,7 +631,8 @@ def _split_bcbs_preferred_injectable(text: str) -> list[dict] | None:
             "preamble": preamble,
             "chunkType": "per_drug_class",
             "drugClass": drug_class_lower,
-            "productName": drug_class_lower,  # used by _build_drug_indication_id
+            "drugFamily": drug_class_lower,
+            "productName": drug_class_lower,
         })
 
     if not chunks:

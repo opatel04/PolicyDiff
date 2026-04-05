@@ -68,6 +68,11 @@ def _batch_write_criteria(criteria: list[dict]) -> int:
             item = {
                 k: v for k, v in item.items()
                 if v is not None and not (k in GSI_KEY_ATTRS and v == "")
+                and not (isinstance(v, list) and len(v) == 0 and k not in (
+                    "universalCriteria", "initialAuthCriteria", "reauthorizationCriteria",
+                    "dosingPerIndication", "preferredProducts", "combinationRestrictions",
+                    "brandNames", "indicationICD10", "reviewReasons",
+                ))
             }
 
             try:
@@ -126,6 +131,7 @@ def _update_policy_status(
     confidence_summary: dict,
     event: dict | None = None,
     drug_names: list[str] | None = None,
+    brand_names: list[str] | None = None,
 ) -> None:
     """Update the PolicyDocuments table with extraction results.
 
@@ -176,12 +182,20 @@ def _update_policy_status(
             update_expr += ", drugName = :dn, drugNames = :dns"
             expr_values[":dn"] = primary_drug
             expr_values[":dns"] = drug_names
+        # Write back aggregated brand names
+        if brand_names:
+            update_expr += ", brandNames = :bns"
+            expr_values[":bns"] = brand_names
+        # Write back policyNumber if present in event
+        if event and event.get("policyNumber"):
+            update_expr += ", policyNumber = :pnum"
+            expr_values[":pnum"] = event["policyNumber"]
         table.update_item(
             Key={"policyDocId": policy_doc_id},
             UpdateExpression=update_expr,
             ExpressionAttributeValues=expr_values,
         )
-        logger.info(f"Updated policy {policy_doc_id} status to '{status}'" + (f", drugs={drug_names}" if drug_names else ""))
+        logger.info(f"Updated policy {policy_doc_id} status to '{status}'" + (f", drugs={drug_names}" if drug_names else "") + (f", brands={len(brand_names or [])}" if brand_names else ""))
     except Exception as e:
         logger.error(f"Failed to update policy status: {e}")
         raise
@@ -308,8 +322,16 @@ def lambda_handler(event: dict[str, Any], _context: Any) -> dict[str, Any]:
         r["drugName"] for r in criteria if r.get("drugName")
     ))
 
+    # Collect unique brand names across all criteria records
+    brand_names_set: set[str] = set()
+    for r in criteria:
+        for bn in (r.get("brandNames") or []):
+            if isinstance(bn, str) and bn.strip():
+                brand_names_set.add(bn.strip())
+    brand_names = sorted(brand_names_set)
+
     review_count = confidence_summary.get("reviewCount", 0)
     status = "review_required" if review_count > 0 else "complete"
-    _update_policy_status(policy_doc_id, status, records_written, confidence_summary, event, drug_names)
+    _update_policy_status(policy_doc_id, status, records_written, confidence_summary, event, drug_names, brand_names)
 
     return {**event, "writeStatus": "complete", "recordsWritten": records_written, "excerptKeys": excerpt_keys}

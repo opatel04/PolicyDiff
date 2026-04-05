@@ -26,6 +26,8 @@ from typing import Any
 
 import boto3
 
+from extraction.normalize_record import normalize_records
+
 logger = logging.getLogger()
 logger.setLevel(logging.INFO)
 
@@ -373,6 +375,9 @@ def lambda_handler(event: dict[str, Any], _context: Any) -> dict[str, Any]:
                     parsed = json.loads(cleaned)
                 records = parsed if isinstance(parsed, list) else [parsed]
 
+                # Normalize all records to guarantee consistent schema
+                normalize_records(records, event)
+
                 # Annotate records with chunk-level context
                 for rec in records:
                     # Carry over productName from multi-product chunks
@@ -408,6 +413,8 @@ def lambda_handler(event: dict[str, Any], _context: Any) -> dict[str, Any]:
                     cleaned = _repair_truncated_json(cleaned)
                     parsed = json.loads(cleaned)
                 records = parsed if isinstance(parsed, list) else [parsed]
+                # Normalize all records to guarantee consistent schema
+                normalize_records(records, event)
                 all_criteria.extend(records)
 
             except json.JSONDecodeError as e:
@@ -424,6 +431,8 @@ def lambda_handler(event: dict[str, Any], _context: Any) -> dict[str, Any]:
         record["policyDocId"] = policy_doc_id
         record["payerName"] = payer_name
         record["effectiveDate"] = event.get("effectiveDate", "")
+        record["policyNumber"] = event.get("policyNumber", "")
+        record["planType"] = event.get("planType", "Commercial")
         record["extractionPromptVersion"] = resolved_prompt_id
         record["drugIndicationId"] = _build_drug_indication_id(record)
 

@@ -106,6 +106,7 @@ def _score_record(record: dict, payer_name: str, doc_class: str) -> dict:
                 break
 
     # Cigna: missing PSM penalty (preferredProducts empty)
+    # Only applies to Cigna — BCBS NC/Florida Blue have preferred products in-document
     if payer_name == "Cigna":
         if record.get("psmMerged"):
             # PSM data has been merged — no penalty, add informational note
@@ -150,14 +151,34 @@ def _score_record(record: dict, payer_name: str, doc_class: str) -> dict:
         confidence -= 0.05 * complex_count
         review_reasons.append(f"Multiple conditional logic markers detected ({complex_count})")
 
-    # ── Universal informational flag ─────────────────────────────────────
+    # ── Missing ICD-10 codes ─────────────────────────────────────────────
 
-    review_reasons.append("Refresh criteria")
+    icd10 = record.get("indicationICD10")
+    if (not icd10 or (isinstance(icd10, list) and len(icd10) == 0)) and record.get("coveredStatus") == "covered":
+        confidence -= 0.03
+        review_reasons.append("Missing ICD-10 codes for indication")
+
+    # ── Missing brand names ──────────────────────────────────────────────
+
+    brand_names = record.get("brandNames")
+    if not brand_names or (isinstance(brand_names, list) and len(brand_names) == 0):
+        confidence -= 0.02
+        review_reasons.append("No brand names extracted")
+
+    # ── Missing dosing information ───────────────────────────────────────
+
+    has_dosing = bool(record.get("dosingLimits")) or bool(record.get("dosingPerIndication"))
+    if not has_dosing and record.get("coveredStatus") == "covered":
+        confidence -= 0.02
+        review_reasons.append("No dosing information extracted")
 
     # ── Clamp and flag ───────────────────────────────────────────────────
 
     confidence = max(0.0, min(1.0, confidence))
     record["confidence"] = round(confidence, 3)
+
+    # Filter out empty review reasons
+    review_reasons = [r for r in review_reasons if r and r.strip()]
 
     if confidence < CONFIDENCE_THRESHOLD:
         record["needsReview"] = True
@@ -167,6 +188,8 @@ def _score_record(record: dict, payer_name: str, doc_class: str) -> dict:
         # Still include review reasons if any exist (informational)
         if review_reasons:
             record["reviewReasons"] = review_reasons
+        else:
+            record["reviewReasons"] = []
 
     return record
 

@@ -148,6 +148,21 @@ Return a valid JSON array where each element is a DrugPolicyCriteriaRecord:
   "combinationRestrictions": [
     {{ "restrictedWith": string, "restrictionType": "same_class" | "same_indication" | "absolute" }}
   ],
+  "universalCriteria": [
+    {{
+      "criterionText": string,
+      "criterionType": "diagnosis" | "step_therapy" | "dosing" | "prescriber_requirement",
+      "logicOperator": "AND" | "OR",
+      "rawExcerpt": string
+    }}
+  ],
+  "dosingPerIndication": [
+    {{
+      "indicationContext": string,
+      "regimen": string,
+      "maxDoseMg": number | null
+    }}
+  ],
   "quantityLimits": null,
   "benefitType": "medical",
   "selfAdminAllowed": null,
@@ -271,6 +286,13 @@ Return a valid JSON array of DrugPolicyCriteriaRecord objects:
     "perFDALabel": false
   }} | null,
   "combinationRestrictions": [],
+  "dosingPerIndication": [
+    {{
+      "indicationContext": string,
+      "regimen": string,
+      "maxDoseMg": number | null
+    }}
+  ],
   "benefitType": "medical",
   "coveredStatus": "covered" | "excluded" | "experimental",
   "exclusionReason": string | null,
@@ -425,6 +447,13 @@ Return a valid JSON array of DrugPolicyCriteriaRecord objects:
   ],
   "planTierRestriction": "pathwell_specialty" | "open_access_plus" | null,
   "dosingLimits": null,
+  "dosingPerIndication": [
+    {{
+      "indicationContext": string,
+      "regimen": string,
+      "maxDoseMg": number | null
+    }}
+  ],
   "combinationRestrictions": [],
   "benefitType": "medical",
   "coveredStatus": "covered",
