@@ -348,7 +348,7 @@ export default function QueryInterfacePage() {
                             </div>
                         </div>
                         <p className="text-center text-[10px] text-muted-foreground/30 mt-2 font-mono">
-                            anthropic.claude-sonnet · policy synthesis
+                            amazon.nova-pro · policy synthesis
                         </p>
                     </div>
                 </div>
