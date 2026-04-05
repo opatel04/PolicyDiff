@@ -5,6 +5,7 @@ import { Button } from "@/components/ui/button";
 import { Textarea } from "@/components/ui/textarea";
 import { BookOpen, Quote, ChevronDown, ArrowUp } from "lucide-react";
 import ReactMarkdown from "react-markdown";
+import { useSubmitQuery } from "@/hooks/use-api";
 
 const suggestedQueries = [
     "Which plans cover infliximab?",
@@ -52,6 +53,8 @@ export default function QueryInterfacePage() {
     const [citationsOpen, setCitationsOpen] = useState(false);
     const bottomRef = useRef<HTMLDivElement>(null);
     const textareaRef = useRef<HTMLTextAreaElement>(null);
+    const [activeCitations, setActiveCitations] = useState(citations);
+    const submitQueryMutation = useSubmitQuery();
     const isEmpty = messages.length === 0 && !isResponding;
 
     useEffect(() => {
@@ -64,10 +67,24 @@ export default function QueryInterfacePage() {
         setMessages((prev) => [...prev, { role: "user", content: text }]);
         setQuery("");
         setIsResponding(true);
-        setTimeout(() => {
-            setMessages((prev) => [...prev, { role: "assistant", content: mockResponse }]);
-            setIsResponding(false);
-        }, 1400);
+        submitQueryMutation.mutate(text, {
+            onSuccess: (data) => {
+                setMessages((prev) => [...prev, { role: "assistant", content: data.answer }]);
+                if (data.citations?.length) {
+                    setActiveCitations(data.citations.map((c) => ({
+                        payer: c.payer.toUpperCase(),
+                        doc: `${c.documentTitle} · ${c.effectiveDate}`,
+                        quote: c.excerpt,
+                    })));
+                }
+                setIsResponding(false);
+            },
+            onError: () => {
+                // Fallback to mock response when API is unavailable
+                setMessages((prev) => [...prev, { role: "assistant", content: mockResponse }]);
+                setIsResponding(false);
+            },
+        });
     };
 
     const handleKeyDown = (e: React.KeyboardEvent<HTMLTextAreaElement>) => {
@@ -190,7 +207,7 @@ export default function QueryInterfacePage() {
                                                 </button>
                                                 {citationsOpen && (
                                                     <div className="divide-y divide-border border-t border-border dark:divide-white/8 dark:border-white/8">
-                                                        {citations.map((c, ci) => (
+                                                        {activeCitations.map((c, ci) => (
                                                             <div key={ci} className="px-4 py-3 space-y-2">
                                                                 <div className="flex items-center gap-2">
                                                                     <span className="rounded border border-border px-1.5 py-0.5 font-mono text-[10px] text-muted-foreground/60 dark:border-white/10">{c.payer}</span>

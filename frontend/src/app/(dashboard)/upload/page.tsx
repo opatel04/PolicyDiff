@@ -1,23 +1,108 @@
 "use client";
 
-import { useState } from "react";
+import { useState, useRef } from "react";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import { UploadCloud, CheckCircle2, Loader2, FileText, ArrowRight } from "lucide-react";
+import { UploadCloud, CheckCircle2, Loader2, FileText, ArrowRight, AlertCircle } from "lucide-react";
 import Link from "next/link";
-
 import { cn } from "@/lib/utils";
+import { useUploadUrl, useCreatePolicy, usePolicyStatus } from "@/hooks/use-api";
+
+type UploadState = "idle" | "uploading" | "extracting" | "complete" | "error";
 
 export default function PolicyUploadPage() {
-    const [uploadState, setUploadState] = useState<"idle" | "uploading" | "extracting" | "complete">("idle");
+    const [uploadState, setUploadState] = useState<UploadState>("idle");
+    const [errorMsg, setErrorMsg] = useState<string | null>(null);
+    const [file, setFile] = useState<File | null>(null);
+    const [policyDocId, setPolicyDocId] = useState<string | null>(null);
+    const [dragOver, setDragOver] = useState(false);
+    const fileInputRef = useRef<HTMLInputElement>(null);
 
-    const handleUpload = (e: React.SyntheticEvent<HTMLFormElement>) => {
+    const uploadUrlMutation = useUploadUrl();
+    const createPolicyMutation = useCreatePolicy();
+    const { data: statusData } = usePolicyStatus(
+        uploadState === "extracting" ? policyDocId : null
+    );
+
+    // Watch extraction status and advance to "complete" when done
+    if (statusData?.extractionStatus === "COMPLETE" && uploadState === "extracting") {
+        setUploadState("complete");
+    }
+    if (statusData?.extractionStatus === "complete" && uploadState === "extracting") {
+        setUploadState("complete");
+    }
+    if (statusData?.extractionStatus === "review_required" && uploadState === "extracting") {
+        setUploadState("complete");
+    }
+    if (statusData?.extractionStatus === "failed" && uploadState === "extracting") {
+        setUploadState("error");
+        setErrorMsg("Extraction failed on the server. Please try again.");
+    }
+
+    const handleFileSelect = (f: File) => {
+        if (f.type !== "application/pdf") {
+            setErrorMsg("Only PDF files are supported.");
+            return;
+        }
+        if (f.size > 50 * 1024 * 1024) {
+            setErrorMsg("File exceeds 50 MB limit.");
+            return;
+        }
+        setErrorMsg(null);
+        setFile(f);
+    };
+
+    const handleUpload = async (e: React.SyntheticEvent<HTMLFormElement>) => {
         e.preventDefault();
+        if (!file) {
+            setErrorMsg("Please select a PDF file to upload.");
+            return;
+        }
+
+        const form = e.currentTarget;
+        const payerName = (form.elements.namedItem("payer") as HTMLSelectElement)?.value;
+        const planType = (form.elements.namedItem("planType") as HTMLSelectElement)?.value;
+        const documentTitle = (form.elements.namedItem("title") as HTMLInputElement)?.value;
+        const effectiveDate = (form.elements.namedItem("date") as HTMLInputElement)?.value;
+
+        setErrorMsg(null);
         setUploadState("uploading");
-        setTimeout(() => setUploadState("extracting"), 1500);
-        setTimeout(() => setUploadState("complete"), 4500);
+
+        try {
+            // 1. Get presigned URL
+            const { uploadUrl, policyDocId: docId, s3Key } = await uploadUrlMutation.mutateAsync({
+                payerName, planType, documentTitle, effectiveDate,
+            });
+            setPolicyDocId(docId);
+
+            // 2. Upload file to S3
+            const s3Res = await fetch(uploadUrl, {
+                method: "PUT",
+                body: file,
+                headers: { "Content-Type": "application/pdf" },
+            });
+            if (!s3Res.ok) throw new Error(`S3 upload failed: ${s3Res.status}`);
+
+            // 3. Create policy record
+            await createPolicyMutation.mutateAsync({
+                policyDocId: docId, payerName, planType, documentTitle, effectiveDate, s3Key,
+            });
+
+            // 4. Move to extracting — status polling will advance to complete
+            setUploadState("extracting");
+        } catch (err) {
+            setErrorMsg(err instanceof Error ? err.message : "Upload failed");
+            setUploadState("error");
+        }
+    };
+
+    const isProcessing = uploadState !== "idle" && uploadState !== "complete" && uploadState !== "error";
+
+    const stepDone = (step: "uploading" | "extracting") => {
+        const order: UploadState[] = ["uploading", "extracting", "complete"];
+        return order.indexOf(uploadState) > order.indexOf(step);
     };
 
     return (
@@ -32,45 +117,91 @@ export default function PolicyUploadPage() {
             <div className="flex flex-row flex-1 min-h-0 items-stretch border border-border rounded-xl overflow-hidden bg-card">
                 {/* Left — Drop zone + progress */}
                 <div className="flex-1 flex flex-col gap-4 p-6">
-                    <Card className={cn(
-                        "border-dashed border-2 transition-all group cursor-pointer hover:border-primary/50 bg-background flex-1",
-                        uploadState === "idle" ? "border-border" : "border-primary/50"
-                    )}>
+                    <Card
+                        className={cn(
+                            "border-dashed border-2 transition-all group cursor-pointer hover:border-primary/50 bg-background flex-1",
+                            dragOver ? "border-primary/70 bg-primary/5" : uploadState === "idle" ? "border-border" : "border-primary/50"
+                        )}
+                        onClick={() => fileInputRef.current?.click()}
+                        onDragOver={(e) => { e.preventDefault(); setDragOver(true); }}
+                        onDragLeave={() => setDragOver(false)}
+                        onDrop={(e) => {
+                            e.preventDefault();
+                            setDragOver(false);
+                            const f = e.dataTransfer.files[0];
+                            if (f) handleFileSelect(f);
+                        }}
+                    >
                         <CardContent className="flex flex-col items-center justify-center h-full text-center gap-4">
                             <div className="p-5 rounded-full bg-muted/70 group-hover:bg-primary/10 transition-colors">
                                 <UploadCloud className="h-10 w-10 text-muted-text group-hover:text-primary transition-colors" />
                             </div>
                             <div>
-                                <p className="text-base font-semibold">Drag & drop policy PDF</p>
-                                <p className="text-sm text-muted-text mt-1">or click to browse local files</p>
+                                {file ? (
+                                    <>
+                                        <p className="text-base font-semibold text-primary">{file.name}</p>
+                                        <p className="text-sm text-muted-text mt-1">{(file.size / 1024 / 1024).toFixed(2)} MB</p>
+                                    </>
+                                ) : (
+                                    <>
+                                        <p className="text-base font-semibold">Drag & drop policy PDF</p>
+                                        <p className="text-sm text-muted-text mt-1">or click to browse local files</p>
+                                    </>
+                                )}
                             </div>
                             <p className="text-xs text-muted-text/50 font-mono">PDF · max 50 MB</p>
                         </CardContent>
                     </Card>
+                    <input
+                        ref={fileInputRef}
+                        type="file"
+                        accept="application/pdf"
+                        className="hidden"
+                        onChange={(e) => { const f = e.target.files?.[0]; if (f) handleFileSelect(f); }}
+                    />
 
-                    {uploadState !== "idle" && (
+                    {errorMsg && (
+                        <div className="flex items-center gap-2 rounded-md border border-destructive/30 bg-destructive/5 px-3 py-2 text-sm text-destructive">
+                            <AlertCircle className="h-4 w-4 shrink-0" />
+                            {errorMsg}
+                        </div>
+                    )}
+
+                    {uploadState !== "idle" && uploadState !== "error" && (
                         <Card className="shrink-0 border-primary/20 bg-primary/5">
                             <CardHeader className="pb-3">
                                 <CardTitle className="text-base">Extraction Progress</CardTitle>
                             </CardHeader>
                             <CardContent className="space-y-3">
                                 <div className="flex items-center gap-3">
-                                    {uploadState === "uploading" ? <Loader2 className="h-4 w-4 animate-spin text-primary" /> : <CheckCircle2 className="h-4 w-4 text-success" />}
+                                    {uploadState === "uploading"
+                                        ? <Loader2 className="h-4 w-4 animate-spin text-primary" />
+                                        : <CheckCircle2 className="h-4 w-4 text-success" />
+                                    }
                                     <span className="text-sm">Uploading document</span>
                                 </div>
                                 <div className="flex items-center gap-3">
-                                    {uploadState === "extracting" ? <Loader2 className="h-4 w-4 animate-spin text-primary" /> : (uploadState === "complete" ? <CheckCircle2 className="h-4 w-4 text-success" /> : <div className="h-4 w-4 rounded-full border border-muted" />)}
+                                    {uploadState === "extracting"
+                                        ? <Loader2 className="h-4 w-4 animate-spin text-primary" />
+                                        : stepDone("extracting") || uploadState === "complete"
+                                            ? <CheckCircle2 className="h-4 w-4 text-success" />
+                                            : <div className="h-4 w-4 rounded-full border border-muted" />
+                                    }
                                     <span className="text-sm">Extracting text via Textract</span>
                                 </div>
                                 <div className="flex items-center gap-3">
-                                    {uploadState === "complete" ? <CheckCircle2 className="h-4 w-4 text-success" /> : <div className="h-4 w-4 rounded-full border border-muted" />}
+                                    {uploadState === "complete"
+                                        ? <CheckCircle2 className="h-4 w-4 text-success" />
+                                        : <div className="h-4 w-4 rounded-full border border-muted" />
+                                    }
                                     <span className="text-sm">Normalizing policy criteria</span>
                                 </div>
                                 {uploadState === "complete" && (
                                     <div className="pt-3 mt-1 border-t border-border space-y-3">
                                         <div className="rounded-md bg-success/10 border border-success/20 p-3">
                                             <p className="text-xs font-semibold text-success flex items-center gap-2">
-                                                <FileText className="h-4 w-4" /> Extracted 12 indications
+                                                <FileText className="h-4 w-4" /> Extraction complete
+                                                {policyDocId && <span className="font-mono text-[10px] opacity-60">· {policyDocId.slice(0, 8)}</span>}
                                             </p>
                                         </div>
                                         <Button asChild variant="outline" className="w-full font-medium">
@@ -104,6 +235,10 @@ export default function PolicyUploadPage() {
                                         <option>Aetna</option>
                                         <option>Cigna</option>
                                         <option>Anthem</option>
+                                        <option>BCBS NC</option>
+                                        <option>Humana</option>
+                                        <option>Molina</option>
+                                        <option>Centene</option>
                                     </select>
                                 </div>
                                 <div className="space-y-2">
@@ -124,8 +259,19 @@ export default function PolicyUploadPage() {
                                 </div>
                             </div>
 
-                            <Button type="submit" size="lg" className="mt-auto w-full bg-secondary text-secondary-foreground font-semibold hover:bg-secondary/90" disabled={uploadState !== "idle"}>
-                                {uploadState === "idle" ? "Upload and Extract" : "Processing..."}
+                            <Button
+                                type="submit"
+                                size="lg"
+                                className="mt-auto w-full bg-secondary text-secondary-foreground font-semibold hover:bg-secondary/90"
+                                disabled={isProcessing || uploadState === "complete"}
+                            >
+                                {isProcessing ? (
+                                    <><Loader2 className="mr-2 h-4 w-4 animate-spin" /> Processing...</>
+                                ) : uploadState === "complete" ? (
+                                    "Upload Complete"
+                                ) : (
+                                    "Upload and Extract"
+                                )}
                             </Button>
                         </form>
                     </div>
