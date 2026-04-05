@@ -358,7 +358,7 @@ class PolicyDiffComputeStack(cdk.Stack):
 
         # QueryLambda — S3 Vectors semantic search + Titan embeddings for query-time embedding
         self.query_fn.add_to_role_policy(iam.PolicyStatement(
-            actions=["s3vectors:QueryVectors"],
+            actions=["s3vectors:QueryVectors", "s3vectors:GetVectors"],
             resources=[f"arn:aws:s3vectors:{cdk.Aws.REGION}:{cdk.Aws.ACCOUNT_ID}:bucket/policydiff-vectors-{cdk.Aws.REGION}/index/policy-criteria-index"],
         ))
 
