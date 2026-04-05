@@ -262,14 +262,15 @@ export default function PolicyUploadPage() {
                                 <div className="space-y-2">
                                     <Label htmlFor="payer">Payer Name</Label>
                                     <select ref={payerRef} id="payer" className="flex h-10 w-full rounded-md border border-input bg-background px-3 py-2 text-sm text-foreground outline-none focus:ring-1 focus:ring-ring">
-                                        <option>UnitedHealthcare</option>
-                                        <option>Aetna</option>
-                                        <option>Cigna</option>
-                                        <option>Anthem</option>
-                                        <option>BCBS NC</option>
-                                        <option>Humana</option>
-                                        <option>Molina</option>
-                                        <option>Centene</option>
+                                        <option value="UnitedHealthcare">UnitedHealthcare</option>
+                                        <option value="Aetna">Aetna</option>
+                                        <option value="Cigna">Cigna</option>
+                                        <option value="EmblemHealth">EmblemHealth</option>
+                                        <option value="Prime Therapeutics">Prime Therapeutics</option>
+                                        <option value="Florida Blue">Florida Blue</option>
+                                        <option value="MCG">MCG</option>
+                                        <option value="BCBS NC">BCBS NC</option>
+                                        <option value="Priority Health">Priority Health</option>
                                     </select>
                                 </div>
                                 <div className="space-y-2">
