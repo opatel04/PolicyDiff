@@ -11,6 +11,9 @@
 #   - Extended drugIndicationId: {drug}#{productName}#{icd10_or_indication}
 #   - approvalPhase-aware drugIndicationId for Cigna 3-phase docs
 #
+# Pipeline is in-memory/pass-through: no DynamoDB reads/writes, no S3 criteria write.
+# S3 is used only to READ the structured text produced by assemble_text.
+#
 # Step Functions I/O:
 #   Input:  { policyDocId, s3Bucket, structuredTextS3Key,
 #             payerName, planType, documentTitle, effectiveDate,
@@ -77,7 +80,6 @@ def _repair_truncated_json(text: str) -> str:
     text = text.strip()
     if not text.startswith("["):
         return text
-    # Count open braces/brackets to determine what needs closing
     depth = 0
     in_string = False
     escape_next = False
@@ -102,23 +104,8 @@ def _repair_truncated_json(text: str) -> str:
                 last_complete = i + 1
         elif ch == "[" and depth == 0:
             pass
-    # Truncate to last complete object and close the array
     if last_complete > 0:
         return text[:last_complete] + "]"
-    return text
-
-
-
-    """Strip markdown fences or preamble from model response."""
-    match = re.search(r"```(?:json)?\s*\n?(.*?)```", text, re.DOTALL)
-    if match:
-        return match.group(1).strip()
-    text = text.strip()
-    if text and text[0] in ("[", "{"):
-        return text
-    for i, ch in enumerate(text):
-        if ch in ("[", "{"):
-            return text[i:]
     return text
 
 
@@ -281,7 +268,7 @@ def _build_drug_indication_id(record: dict) -> str:
 _ICD10_PROMPT_IDS = {"A", "A_MULTIPRODUCT", "B", "C", "C_3PHASE", "G", "H", "generic"}
 
 # Prompt IDs that should use indication-level chunks
-_CHUNKED_PROMPT_IDS = {"A", "A_MULTIPRODUCT", "B", "C", "C_3PHASE", "G", "H", "B_FORMULARY"}
+_CHUNKED_PROMPT_IDS = {"A", "A_MULTIPRODUCT", "B", "C", "C_3PHASE", "G", "H", "B_FORMULARY", "F_PREFERRED"}
 
 
 # ── Main handler ──────────────────────────────────────────────────────────────
@@ -307,26 +294,10 @@ def lambda_handler(event: dict[str, Any], _context: Any) -> dict[str, Any]:
     structured_key: str = event["structuredTextS3Key"]
     doc_class: str = event.get("documentClass", "drug_specific")
 
-    # Enrich metadata from DynamoDB if missing (direct S3 upload path)
     payer_name: str = event.get("payerName", "")
     if not payer_name:
-        try:
-            dynamodb = boto3.resource("dynamodb")
-            table = dynamodb.Table(os.environ.get("POLICY_DOCUMENTS_TABLE", "PolicyDocuments"))
-            result = table.get_item(Key={"policyDocId": policy_doc_id})
-            item = result.get("Item", {})
-            event = {
-                **event,
-                "payerName": item.get("payerName", "Unknown"),
-                "planType": item.get("planType", "Commercial"),
-                "documentTitle": item.get("documentTitle", "Unknown Policy"),
-                "effectiveDate": item.get("effectiveDate", ""),
-            }
-            payer_name = event["payerName"]
-            logger.info(json.dumps({"action": "enriched_from_dynamo", "payerName": payer_name}))
-        except Exception as e:
-            logger.warning(f"Could not enrich metadata from DynamoDB: {e}")
-            payer_name = "Unknown"
+        logger.warning(json.dumps({"warning": "payerName_missing", "policyDocId": policy_doc_id}))
+        payer_name = "Unknown"
 
     # Skip extraction for index-only document classes
     from extraction.prompts import NO_EXTRACTION_CLASSES
@@ -388,13 +359,10 @@ def lambda_handler(event: dict[str, Any], _context: Any) -> dict[str, Any]:
 
                 # Annotate records with chunk-level context
                 for rec in records:
-                    # Carry over productName from multi-product chunks
                     if chunk_data.get("productName") and not rec.get("productName"):
                         rec["productName"] = chunk_data["productName"]
-                    # Mark unproven/excluded lists
                     if chunk_data.get("chunkType") == "unproven_list":
                         rec.setdefault("coveredStatus", "unproven")
-                    # Mark formulary entries
                     if chunk_data.get("chunkType") == "formulary_batch":
                         rec["documentClass"] = "formulary"
 
@@ -438,21 +406,19 @@ def lambda_handler(event: dict[str, Any], _context: Any) -> dict[str, Any]:
         record["payerName"] = payer_name
         record["effectiveDate"] = event.get("effectiveDate", "")
         record["extractionPromptVersion"] = resolved_prompt_id
+        # Normalize drugName to lowercase for consistent cross-payer matching
+        if record.get("drugName"):
+            record["drugName"] = record["drugName"].strip().lower()
+        # F_PREFERRED records have no indicationName — synthesize from drugClass
+        # so drugIndicationId doesn't fall back to "unknown"
+        if not record.get("indicationName") and record.get("drugClass"):
+            record["indicationName"] = record["drugClass"]
         record["drugIndicationId"] = _build_drug_indication_id(record)
-
-    # 6. Write to S3
-    criteria_key = f"{policy_doc_id}/extracted-criteria.json"
-    s3.put_object(
-        Bucket=s3_bucket,
-        Key=criteria_key,
-        Body=json.dumps(all_criteria, default=str),
-        ContentType="application/json",
-    )
 
     return {
         **event,
         "extractedCriteria": all_criteria,
         "extractionCount": len(all_criteria),
-        "extractedCriteriaS3Key": criteria_key,
+        "extractedCriteriaS3Key": "",
         "extractionPromptUsed": resolved_prompt_id,
     }

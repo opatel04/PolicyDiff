@@ -409,12 +409,33 @@ def handle_delete_policy(event: dict) -> dict:
         return create_response(403, {"message": "Forbidden: admin role required"})
 
     table_name = os.environ.get("POLICY_DOCUMENTS_TABLE")
+    criteria_table_name = os.environ.get("DRUG_POLICY_CRITERIA_TABLE")
     if not table_name:
         return create_response(500, {"message": "Server configuration error"})
 
     policy_doc_id = (event.get("pathParameters") or {}).get("id")
     if not policy_doc_id:
         return create_response(400, {"message": "Missing path parameter: id"})
+
+    # Hard-delete all DrugPolicyCriteria rows for this policy
+    if criteria_table_name:
+        try:
+            criteria_table = dynamodb.Table(criteria_table_name)
+            result = criteria_table.query(
+                KeyConditionExpression=Key("policyDocId").eq(policy_doc_id),
+                ProjectionExpression="policyDocId, drugIndicationId",
+            )
+            items = result.get("Items", [])
+            if items:
+                with criteria_table.batch_writer() as batch:
+                    for item in items:
+                        batch.delete_item(Key={
+                            "policyDocId": item["policyDocId"],
+                            "drugIndicationId": item["drugIndicationId"],
+                        })
+                logger.info(json.dumps({"action": "criteria_deleted", "policyDocId": policy_doc_id, "count": len(items)}))
+        except Exception as e:
+            logger.warning(json.dumps({"warning": "criteria_delete_failed", "policyDocId": policy_doc_id, "detail": str(e)}))
 
     table = dynamodb.Table(table_name)
     # ADR: Soft delete | Set extractionStatus = "deleted" to preserve audit trail and diff history
