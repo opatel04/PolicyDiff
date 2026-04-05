@@ -32,7 +32,7 @@ auth0_audience = os.environ.get("AUTH0_AUDIENCE", "")
 
 bedrock_model_arn = os.environ.get(
     "BEDROCK_MODEL_ARN",
-    "arn:aws:bedrock:us-east-1::foundation-model/anthropic.claude-sonnet-4-5",
+    "arn:aws:bedrock:us-east-1::foundation-model/amazon.nova-pro-v1:0",
 )
 
 # ── Validation warnings ───────────────────────────────────────────────────────
