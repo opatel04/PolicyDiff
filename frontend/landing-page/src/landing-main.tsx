@@ -2,7 +2,7 @@
 
 import { ReactNode } from "react";
 import { motion } from "motion/react";
-import { ArrowRight, FileText, RefreshCw, AlertTriangle, CheckCircle2 } from "lucide-react";
+import { ArrowRight, FileText, RefreshCw, Search, CheckCircle2 } from "lucide-react";
 
 // --- Components ---
 
@@ -114,6 +114,12 @@ const FeatureCard = ({ icon: Icon, title, description }: { icon: any, title: str
     </div>
 );
 
+const Separator = () => (
+    <div className="w-full px-6">
+        <div className="max-w-7xl mx-auto h-px bg-gradient-to-r from-transparent via-charcoal/10 to-transparent" />
+    </div>
+);
+
 const SectionLabel = ({ children, className = "" }: { children: ReactNode, className?: string }) => (
     <span className={`inline-block px-3 py-1 rounded-full text-[10px] uppercase tracking-widest font-bold mb-4 ${className}`}>
         {children}
@@ -192,8 +198,18 @@ export default function App() {
                 </motion.div>
             </section>
 
+            <Separator />
+
             {/* Features Grid */}
             <section id="how-it-works" className="py-32 px-6 bg-surface-low/30 scroll-mt-24">
+                <div className="max-w-7xl mx-auto">
+                    <div className="mb-16">
+                        <SectionLabel className="bg-terracotta/10 text-terracotta">The Problem</SectionLabel>
+                        <h2 className="font-serif text-5xl md:text-6xl font-medium leading-tight">
+                            Why policy research <br /> is broken today.
+                        </h2>
+                    </div>
+                </div>
                 <div className="max-w-7xl mx-auto grid md:grid-cols-3 gap-16 md:gap-24">
                     <FeatureCard
                         icon={FileText}
@@ -206,12 +222,15 @@ export default function App() {
                         description="Policies change mid-quarter without notice. Patients lose coverage while you're still working from last month's manual spreadsheet."
                     />
                     <FeatureCard
-                        icon={AlertTriangle}
-                        title="Discordant Benefits"
-                        description="Medical and pharmacy rules often contradict each other. We identify these gaps automatically to prevent unexpected claim denials."
+                        icon={Search}
+                        title="No Cross-Payer Visibility"
+                        description="Knowing what one payer requires isn't enough. PolicyDiff maps coverage criteria across every payer in your portfolio so you can spot differences at a glance."
                     />
                 </div>
             </section>
+
+
+            <Separator />
 
             {/* Alternating Sections */}
             <section className="py-32 px-6">
@@ -229,10 +248,10 @@ export default function App() {
                             </p>
                             <ul className="space-y-4">
                                 <li className="flex items-center gap-3 text-sm font-medium text-charcoal/80">
-                                    <CheckCircle2 size={18} style={{ color: '#BAE3A1' }} /> Automatic normalization of clinical terms
+                                    <CheckCircle2 size={18} style={{ color: '#BAE3A1' }} /> Compare step therapy and prior auth rules across payers
                                 </li>
                                 <li className="flex items-center gap-3 text-sm font-medium text-charcoal/80">
-                                    <CheckCircle2 size={18} style={{ color: '#BAE3A1' }} /> Export-ready reports for client presentations
+                                    <CheckCircle2 size={18} style={{ color: '#BAE3A1' }} /> Filter by drug, payer, or policy type in seconds
                                 </li>
                             </ul>
                         </div>
@@ -279,52 +298,7 @@ export default function App() {
 
                     {/* Section 3 */}
                     <div className="grid md:grid-cols-2 gap-20 items-center">
-                        <div className="max-w-lg">
-                            <SectionLabel className="bg-sage/10 text-sage">Monitoring</SectionLabel>
-                            <h2 className="font-serif text-5xl md:text-6xl font-medium mb-8 leading-tight">
-                                Automated <br /> Change Tracking
-                            </h2>
-                            <p className="text-xl text-charcoal/60 leading-relaxed mb-10">
-                                We scan payer websites 24/7. When a policy changes, we alert you immediately with a "diff" view of what was added or removed.
-                            </p>
-                            <div className="bg-white p-6 rounded-xl editorial-shadow border border-charcoal/5">
-                                <div className="flex justify-between items-center mb-4">
-                                    <span className="text-sm font-bold text-charcoal/80">UnitedHealthcare - Stelara</span>
-                                    <span className="px-2 py-1 bg-red-50 text-red-600 text-[10px] font-bold rounded uppercase">Updated</span>
-                                </div>
-                                <div className="space-y-2">
-                                    <div className="flex items-center gap-2 text-sm text-red-600">
-                                        <div className="w-1.5 h-1.5 rounded-full bg-red-600" />
-                                        <span className="line-through decoration-red-600"> Trial of 1 TNF inhibitor
-                                        </span>
-                                    </div>
-                                    <div className="flex items-center gap-2 text-sm" style={{ color: '#697063' }}>
-                                        <div className="w-1.5 h-1.5 rounded-full" style={{ backgroundColor: '#697063' }} /> Trial of 2 TNF inhibitors required
-                                    </div>
-                                </div>
-                            </div>
-                        </div>
-                        <div className="bg-charcoal rounded-2xl aspect-square p-8 flex items-center justify-center overflow-hidden relative">
-                            <div className="absolute top-12 left-1/2 -translate-x-1/2 w-48 h-1 bg-white/10 rounded-full overflow-hidden">
-                                <div className="w-1/3 h-full bg-terracotta" />
-                            </div>
-                            <div className="w-full bg-white rounded-lg p-6 editorial-shadow">
-                                <div className="h-4 w-32 bg-surface-low rounded mb-6" />
-                                <div className="space-y-3">
-                                    {[1, 2, 3, 4].map(i => (
-                                        <div key={i} className="h-10 bg-surface-low/50 rounded flex items-center px-3 gap-3">
-                                            <div className="w-4 h-4 rounded-full bg-terracotta/20" />
-                                            <div className="h-2 w-full bg-charcoal/5 rounded" />
-                                        </div>
-                                    ))}
-                                </div>
-                            </div>
-                        </div>
-                    </div>
-
-                    {/* Section 4 */}
-                    <div className="grid md:grid-cols-2 gap-20 items-center">
-                        <div className="order-2 md:order-1 bg-[#F5F2ED] rounded-2xl aspect-square p-8 md:p-12 flex items-center justify-center relative overflow-hidden">
+                        <div className="order-1 md:order-2 bg-[#F5F2ED] rounded-2xl aspect-square p-8 md:p-12 flex items-center justify-center relative overflow-hidden">
                             {/* Search Terminal Mockup */}
                             <div className="w-full bg-charcoal rounded-xl shadow-2xl overflow-hidden border border-white/10 flex flex-col">
                                 <div className="p-4 border-b border-white/5 flex items-center justify-between">
@@ -361,7 +335,7 @@ export default function App() {
                                 </div>
                             </div>
                         </div>
-                        <div className="order-1 md:order-2 max-w-lg">
+                        <div className="order-2 md:order-1 max-w-lg">
                             <SectionLabel className="bg-[#F3EFE0] text-[#8B7E66]">AI Search</SectionLabel>
                             <h2 className="font-serif text-5xl md:text-6xl font-medium mb-8 leading-tight">
                                 Ask anything. <br /> Get cited answers.
@@ -374,6 +348,8 @@ export default function App() {
 
                 </div>
             </section>
+
+            <Separator />
 
             {/* Testimonial Section */}
             <section className="py-32 px-6 bg-surface-low/50">

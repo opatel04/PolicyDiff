@@ -293,9 +293,9 @@ export default function DashboardPage() {
                         <h2 className="text-xs font-bold uppercase tracking-widest text-foreground">Watched Drugs</h2>
                         {!loading && <span className="text-xs text-muted-foreground">({watchedDrugs.length})</span>}
                     </div>
-                    <Link href="/diffs">
+                    <Link href="/explorer">
                         <Button variant="ghost" size="sm" className="h-7 text-xs text-muted-foreground gap-1 cursor-pointer">
-                            All changes <ArrowRight className="h-3 w-3" />
+                            View policies <ArrowRight className="h-3 w-3" />
                         </Button>
                     </Link>
                 </div>
