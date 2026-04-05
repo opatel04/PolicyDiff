@@ -1,3 +1,5 @@
+"use client";
+
 import { ReactNode } from "react";
 import { motion } from "motion/react";
 import { ArrowRight, FileText, RefreshCw, AlertTriangle, CheckCircle2 } from "lucide-react";
@@ -8,12 +10,14 @@ const Button = ({
     children,
     variant = 'primary',
     className = '',
-    onClick
+    onClick,
+    href
 }: {
     children: ReactNode;
     variant?: 'primary' | 'secondary' | 'tertiary';
     className?: string;
     onClick?: () => void;
+    href?: string;
 }) => {
     const baseStyles = "px-8 py-3 rounded-full font-medium transition-all duration-300 flex items-center justify-center gap-2";
     const variants = {
@@ -22,10 +26,20 @@ const Button = ({
         tertiary: "text-charcoal hover:translate-x-1",
     };
 
+    const classes = `${baseStyles} ${variants[variant]} ${className}`;
+
+    if (href) {
+        return (
+            <a href={href} className={classes}>
+                {children}
+            </a>
+        );
+    }
+
     return (
         <button
             onClick={onClick}
-            className={`${baseStyles} ${variants[variant]} ${className}`}
+            className={classes}
         >
             {children}
         </button>
@@ -46,7 +60,7 @@ const Navbar = () => {
     const underlineStyles = "absolute bottom-0 left-0 w-0 h-0.5 bg-terracotta/40 transition-all duration-300 group-hover:w-full";
 
     return (
-        <nav className="glass-header border-b border-charcoal/5">
+        <nav className="glass-header sticky top-0 z-50 border-b border-charcoal/5">
             <div className="max-w-7xl mx-auto px-6 h-20 flex items-center justify-between">
                 <div className="flex items-center gap-12">
                     <span
@@ -80,8 +94,8 @@ const Navbar = () => {
                     </div>
                 </div>
                 <div className="flex items-center gap-4">
-                    <Button variant="tertiary" className="text-sm py-2 px-4">Sign In</Button>
-                    <Button variant="primary" className="text-sm py-2 px-6">Demo</Button>
+                    <Button variant="tertiary" className="text-sm py-2 px-4" href="/auth/login?returnTo=/">Sign In</Button>
+                    <Button variant="primary" className="text-sm py-2 px-6" href="/auth/login?screen_hint=signup&returnTo=/">Get Started</Button>
                 </div>
             </div>
         </nav>
@@ -108,16 +122,16 @@ const SectionLabel = ({ children, className = "" }: { children: ReactNode, class
 
 export default function App() {
     return (
-        <div className="min-h-screen selection:bg-terracotta/10 selection:text-terracotta">
+        <div className="min-h-screen bg-alabaster text-charcoal font-sans selection:bg-terracotta/10 selection:text-terracotta">
             <Navbar />
 
             {/* Hero Section */}
-            <section className="pt-24 pb-32 px-6 overflow-hidden">
+            <section className="relative z-0 pt-24 pb-32 px-6 overflow-hidden">
                 <div className="max-w-4xl mx-auto text-center mb-20">
                     <motion.h1
                         initial={{ opacity: 0, y: 20 }}
                         animate={{ opacity: 1, y: 0 }}
-                        className="text-6xl md:text-8xl font-medium leading-[1.1] mb-8"
+                        className="font-serif text-6xl md:text-8xl font-medium leading-[1.1] mb-8"
                     >
                         Stop reading policy PDFs. <br />
                         <span className="italic">Start acting on data.</span>
@@ -137,7 +151,7 @@ export default function App() {
                         transition={{ delay: 0.2 }}
                         className="flex flex-col sm:flex-row items-center justify-center gap-6"
                     >
-                        <Button variant="secondary">See the Demo</Button>
+                        <Button variant="secondary" href="/auth/login?returnTo=/">See the Demo</Button>
                         <Button
                             variant="tertiary"
                             onClick={() => document.getElementById('how-it-works')?.scrollIntoView({ behavior: 'smooth' })}
@@ -152,7 +166,7 @@ export default function App() {
                     initial={{ opacity: 0, scale: 0.95 }}
                     animate={{ opacity: 1, scale: 1 }}
                     transition={{ delay: 0.3, duration: 0.8 }}
-                    className="max-w-6xl mx-auto relative"
+                    className="pointer-events-none max-w-6xl mx-auto relative"
                 >
                     <div className="aspect-[16/10] bg-[#e89a74] rounded-2xl md:rounded-2xl overflow-hidden p-8 md:p-16 flex items-center justify-center">
                         <div className="w-full h-full bg-white rounded-xl shadow-2xl overflow-hidden editorial-shadow">
@@ -207,7 +221,7 @@ export default function App() {
                     <div id="insights" className="grid md:grid-cols-2 gap-20 items-center scroll-mt-25">
                         <div className="max-w-lg">
                             <SectionLabel className="bg-[#D8E2CF] text-[#4A5D45]">Efficiency</SectionLabel>
-                            <h2 className="text-5xl md:text-6xl font-medium mb-8 leading-tight">
+                            <h2 className="font-serif text-5xl md:text-6xl font-medium mb-8 leading-tight">
                                 Cross-Payer <br /> Comparison
                             </h2>
                             <p className="text-xl text-charcoal/60 leading-relaxed mb-10">
@@ -253,13 +267,13 @@ export default function App() {
                         </div>
                         <div className="order-1 md:order-2 max-w-lg">
                             <SectionLabel className="bg-[#FFDBD3] text-[#4D261A]">Clinical Insight</SectionLabel>
-                            <h2 className="text-5xl md:text-6xl font-medium mb-8 leading-tight">
+                            <h2 className="font-serif text-5xl md:text-6xl font-medium mb-8 leading-tight">
                                 The Approval <br /> Path Generator
                             </h2>
                             <p className="text-xl text-charcoal/60 leading-relaxed mb-10">
                                 Input a patient profile and see exactly which payers will approve the therapy—and what clinical evidence is required to secure the prior authorization.
                             </p>
-                            <Button variant="primary" className="bg-[#4d261a]">Explore Clinical Paths</Button>
+                            <Button variant="primary" className="bg-[#4d261a]" href="/auth/login?returnTo=/approval-path">Explore Clinical Paths</Button>
                         </div>
                     </div>
 
@@ -267,7 +281,7 @@ export default function App() {
                     <div className="grid md:grid-cols-2 gap-20 items-center">
                         <div className="max-w-lg">
                             <SectionLabel className="bg-sage/10 text-sage">Monitoring</SectionLabel>
-                            <h2 className="text-5xl md:text-6xl font-medium mb-8 leading-tight">
+                            <h2 className="font-serif text-5xl md:text-6xl font-medium mb-8 leading-tight">
                                 Automated <br /> Change Tracking
                             </h2>
                             <p className="text-xl text-charcoal/60 leading-relaxed mb-10">
@@ -349,7 +363,7 @@ export default function App() {
                         </div>
                         <div className="order-1 md:order-2 max-w-lg">
                             <SectionLabel className="bg-[#F3EFE0] text-[#8B7E66]">AI Search</SectionLabel>
-                            <h2 className="text-5xl md:text-6xl font-medium mb-8 leading-tight">
+                            <h2 className="font-serif text-5xl md:text-6xl font-medium mb-8 leading-tight">
                                 Ask anything. <br /> Get cited answers.
                             </h2>
                             <p className="text-xl text-charcoal/60 leading-relaxed mb-10">
@@ -365,7 +379,7 @@ export default function App() {
             <section className="py-32 px-6 bg-surface-low/50">
                 <div id="methodology" className="max-w-7xl mx-auto grid md:grid-cols-2 gap-20 items-center scroll-mt-38">
                     <div>
-                        <h2 className="text-6xl md:text-7xl font-medium mb-12 leading-tight">
+                        <h2 className="font-serif text-6xl md:text-7xl font-medium mb-12 leading-tight">
                             Built for Pharmacy <br /> Consultants.
                         </h2>
                         <p className="text-2xl text-charcoal/80 leading-relaxed max-w-md">

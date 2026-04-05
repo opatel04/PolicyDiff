@@ -10,6 +10,12 @@
   --color-success: #22c55e;
   --color-neutral: #6b7280;
   --color-accent: #3b82f6;
+  --color-alabaster: #faf9f5;
+  --color-terracotta: #602b1e;
+  --color-sage: #576152;
+  --color-charcoal: #1b1c1a;
+  --color-surface-low: #f4f4f0;
+  --color-surface-high: #e9e8e4;
 
   --color-background: #111113;
   --color-card: #1c1c1e;
@@ -86,4 +92,13 @@ body {
   --color-sidebar-accent-foreground: var(--sidebar-accent-foreground);
   --color-sidebar-border: var(--sidebar-border);
   --color-sidebar-ring: var(--sidebar-ring);
+}
+
+.editorial-shadow {
+  box-shadow: 0 20px 40px rgba(45, 41, 38, 0.04);
+}
+
+.glass-header {
+  backdrop-filter: blur(20px);
+  background-color: color-mix(in srgb, var(--color-alabaster) 80%, transparent);
 }
