@@ -73,6 +73,7 @@ export interface ComparisonMatrix {
     values: { payerName: string; value: string; severity: string }[];
   }[];
   message?: string;
+  hcpcsCode?: string;
 }
 
 export interface QueryResult {

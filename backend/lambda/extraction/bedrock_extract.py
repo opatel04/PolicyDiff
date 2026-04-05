@@ -39,7 +39,39 @@ bedrock = boto3.client("bedrock-runtime", region_name=os.environ.get("AWS_REGION
 BEDROCK_MODEL_ID = os.environ.get("BEDROCK_MODEL_ID", "")
 if not BEDROCK_MODEL_ID:
     logger.warning(json.dumps({"warning": "missing_env_var", "var": "BEDROCK_MODEL_ID"}))
-MAX_DOCUMENT_CHARS = 180_000
+# ADR: Biosimilar→generic safety net | catches brand names the LLM misses after prompt normalization
+_BIOSIMILAR_TO_GENERIC: dict[str, str] = {
+    # rituximab
+    "riabni": "rituximab", "ruxience": "rituximab", "truxima": "rituximab", "rituxan": "rituximab",
+    # infliximab
+    "remicade": "infliximab", "inflectra": "infliximab", "renflexis": "infliximab",
+    "avsola": "infliximab", "ixifi": "infliximab",
+    # trastuzumab
+    "herceptin": "trastuzumab", "ogivri": "trastuzumab", "herzuma": "trastuzumab",
+    "ontruzant": "trastuzumab", "trazimera": "trastuzumab", "kanjinti": "trastuzumab",
+    # bevacizumab
+    "avastin": "bevacizumab", "mvasi": "bevacizumab", "zirabev": "bevacizumab",
+    # adalimumab
+    "humira": "adalimumab", "hadlima": "adalimumab", "hyrimoz": "adalimumab",
+    "cyltezo": "adalimumab", "yusimry": "adalimumab", "amjevita": "adalimumab",
+    "hulio": "adalimumab", "simlandi": "adalimumab",
+    # etanercept
+    "enbrel": "etanercept", "erelzi": "etanercept", "eticovo": "etanercept",
+    # ustekinumab
+    "stelara": "ustekinumab", "wezlana": "ustekinumab", "selarsdi": "ustekinumab",
+    # secukinumab
+    "cosentyx": "secukinumab", "secukibio": "secukinumab",
+    # denosumab
+    "prolia": "denosumab", "xgeva": "denosumab", "jubbonti": "denosumab",
+    "wyost": "denosumab", "bildyos": "denosumab", "bilprevda": "denosumab",
+    # botulinum toxins
+    "botox": "onabotulinumtoxina", "dysport": "abobotulinumtoxina",
+    "myobloc": "rimabotulinumtoxinb", "xeomin": "incobotulinumtoxina",
+    # risankizumab / guselkumab
+    "skyrizi": "risankizumab", "tremfya": "guselkumab",
+}
+
+
 
 
 def _invoke_bedrock(prompt: str, max_tokens: int = 8192) -> str:
@@ -406,9 +438,10 @@ def lambda_handler(event: dict[str, Any], _context: Any) -> dict[str, Any]:
         record["payerName"] = payer_name
         record["effectiveDate"] = event.get("effectiveDate", "")
         record["extractionPromptVersion"] = resolved_prompt_id
-        # Normalize drugName to lowercase for consistent cross-payer matching
+        # Normalize drugName: lowercase then map brand/biosimilar → generic
         if record.get("drugName"):
-            record["drugName"] = record["drugName"].strip().lower()
+            raw = record["drugName"].strip().lower()
+            record["drugName"] = _BIOSIMILAR_TO_GENERIC.get(raw, raw)
         # F_PREFERRED records have no indicationName — synthesize from drugClass
         # so drugIndicationId doesn't fall back to "unknown"
         if not record.get("indicationName") and record.get("drugClass"):

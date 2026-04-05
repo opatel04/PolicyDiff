@@ -109,9 +109,16 @@ CROSS-REFERENCES: If the criteria text references another UHC policy (for exampl
 referenced data.
 
 DRUG NAME NORMALIZATION (always use generic name):
-Remicade → infliximab | Humira → adalimumab | Enbrel → etanercept | Rituxan → rituximab
-Herceptin → trastuzumab | Avastin → bevacizumab | Stelara → ustekinumab | Cosentyx → secukinumab
-Skyrizi → risankizumab | Tremfya → guselkumab | Prolia / Xgeva → denosumab
+Rituxan / Riabni / Ruxience / Truxima → rituximab
+Remicade / Inflectra / Renflexis / Avsola / Ixifi → infliximab
+Herceptin / Ogivri / Herzuma / Ontruzant / Trazimera / Kanjinti → trastuzumab
+Avastin / Mvasi / Zirabev → bevacizumab
+Humira / Hadlima / Hyrimoz / Cyltezo / Yusimry / Amjevita / Hulio / Simlandi → adalimumab
+Enbrel / Erelzi / Eticovo → etanercept
+Stelara / Wezlana / Selarsdi → ustekinumab
+Cosentyx / Secukibio → secukinumab
+Skyrizi → risankizumab | Tremfya → guselkumab
+Prolia / Xgeva / Jubbonti / Wyost / Bildyos / Bilprevda → denosumab
 Botox → onabotulinumtoxinA | Dysport → abobotulinumtoxinA | Myobloc → rimabotulinumtoxinB
 Xeomin → incobotulinumtoxinA
 
@@ -261,9 +268,16 @@ Pre-extracted ICD-10 mapping (use this to populate indicationICD10 fields):
 {icd10Json}
 
 DRUG NAME NORMALIZATION (always use generic name):
-Remicade → infliximab | Humira → adalimumab | Enbrel → etanercept | Rituxan → rituximab
-Herceptin → trastuzumab | Avastin → bevacizumab | Stelara → ustekinumab | Cosentyx → secukinumab
-Skyrizi → risankizumab | Tremfya → guselkumab | Prolia / Xgeva → denosumab
+Rituxan / Riabni / Ruxience / Truxima → rituximab
+Remicade / Inflectra / Renflexis / Avsola / Ixifi → infliximab
+Herceptin / Ogivri / Herzuma / Ontruzant / Trazimera / Kanjinti → trastuzumab
+Avastin / Mvasi / Zirabev → bevacizumab
+Humira / Hadlima / Hyrimoz / Cyltezo / Yusimry / Amjevita / Hulio / Simlandi → adalimumab
+Enbrel / Erelzi / Eticovo → etanercept
+Stelara / Wezlana / Selarsdi → ustekinumab
+Cosentyx / Secukibio → secukinumab
+Skyrizi → risankizumab | Tremfya → guselkumab
+Prolia / Xgeva / Jubbonti / Wyost / Bildyos / Bilprevda → denosumab
 Botox → onabotulinumtoxinA | Dysport → abobotulinumtoxinA | Myobloc → rimabotulinumtoxinB
 Xeomin → incobotulinumtoxinA
 
@@ -452,9 +466,16 @@ Pre-extracted ICD-10 mapping (use this to populate indicationICD10 fields):
 {icd10Json}
 
 DRUG NAME NORMALIZATION (always use generic name):
-Remicade → infliximab | Humira → adalimumab | Enbrel → etanercept | Rituxan → rituximab
-Herceptin → trastuzumab | Avastin → bevacizumab | Stelara → ustekinumab | Cosentyx → secukinumab
-Skyrizi → risankizumab | Tremfya → guselkumab | Prolia / Xgeva → denosumab
+Rituxan / Riabni / Ruxience / Truxima → rituximab
+Remicade / Inflectra / Renflexis / Avsola / Ixifi → infliximab
+Herceptin / Ogivri / Herzuma / Ontruzant / Trazimera / Kanjinti → trastuzumab
+Avastin / Mvasi / Zirabev → bevacizumab
+Humira / Hadlima / Hyrimoz / Cyltezo / Yusimry / Amjevita / Hulio / Simlandi → adalimumab
+Enbrel / Erelzi / Eticovo → etanercept
+Stelara / Wezlana / Selarsdi → ustekinumab
+Cosentyx / Secukibio → secukinumab
+Skyrizi → risankizumab | Tremfya → guselkumab
+Prolia / Xgeva / Jubbonti / Wyost / Bildyos / Bilprevda → denosumab
 Botox → onabotulinumtoxinA | Dysport → abobotulinumtoxinA | Myobloc → rimabotulinumtoxinB
 Xeomin → incobotulinumtoxinA
 
@@ -919,6 +940,20 @@ coveredStatus: "excluded".
 
 Pre-extracted ICD-10 mapping:
 {icd10Json}
+
+DRUG NAME NORMALIZATION (always use generic name):
+Rituxan / Riabni / Ruxience / Truxima → rituximab
+Remicade / Inflectra / Renflexis / Avsola / Ixifi → infliximab
+Herceptin / Ogivri / Herzuma / Ontruzant / Trazimera / Kanjinti → trastuzumab
+Avastin / Mvasi / Zirabev → bevacizumab
+Humira / Hadlima / Hyrimoz / Cyltezo / Yusimry / Amjevita / Hulio / Simlandi → adalimumab
+Enbrel / Erelzi / Eticovo → etanercept
+Stelara / Wezlana / Selarsdi → ustekinumab
+Cosentyx / Secukibio → secukinumab
+Skyrizi → risankizumab | Tremfya → guselkumab
+Prolia / Xgeva / Jubbonti / Wyost / Bildyos / Bilprevda → denosumab
+Botox → onabotulinumtoxinA | Dysport → abobotulinumtoxinA | Myobloc → rimabotulinumtoxinB
+Xeomin → incobotulinumtoxinA
 
 OUTPUT FORMAT — Return a valid JSON array. \
 One element per indication + phase (3 records per indication):
